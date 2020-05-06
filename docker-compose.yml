@@ -1,0 +1,67 @@
+version: '3'
+
+services:
+  bitwarden:
+    # Standard Bitwarden is very resource-heavy and cannot run on micro cloud instances
+    # Bitwarden Rust is a Rust (mostly) feature-complete implementation of Bitwarden
+    # https://github.com/dani-garcia/bitwarden_rs
+    image: bitwardenrs/server:alpine
+    restart: always
+    container_name: bitwarden
+    volumes:
+    - ${PWD}/bitwarden/data:/data
+    environment:
+    - LOG_FILE=/data/bitwarden.log
+    - WEBSOCKET_ENABLED=true            # required for websockets
+    - SHOW_PASSWORD_HINT=false
+    - DOMAIN=https://${DOMAIN}          # DOMAIN is set in .env but doesn't have protocol prefix
+    - SMTP_FROM_NAME=Bitwarden (${DOMAIN})
+    - ADMIN_TOKEN                       # Value-less variables are set in .env
+    - SIGNUPS_ALLOWED
+    - SMTP_HOST
+    - SMTP_FROM
+    - SMTP_PORT
+    - SMTP_SSL
+    - SMTP_USERNAME
+    - SMTP_PASSWORD
+             
+  proxy:
+    # Caddy provides an automatic HTTPS reverse proxy with Let's Encrypt cert provisioning
+    # https://caddyserver.com/
+    image: caddy/caddy:alpine
+    restart: always
+    container_name: proxy
+    volumes:
+    - ${PWD}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    - ${PWD}/caddy/data:/data
+    - caddycerts:/root/.caddy
+    ports:
+    - 80:80                             # Port 80 is necessary for Let's Encrypt ACME
+    - 443:443
+    environment:
+    - LOG_FILE=/data/logs/caddy.log
+    - ACME_AGREE=true                   # agree to ACME for auto HTTPS
+    - DOMAIN                            # Value-less variables are set in .env
+    - EMAIL
+
+  ddns:
+    # Cloud SDK Docker alpine image provides gcloud utility used in dynamic dns script ddns.sh
+    # https://cloud.google.com/sdk/docs/downloads-docker
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:alpine
+    restart: always
+    container_name: ddns
+    volumes:
+    - ${PWD}/ddns/ddns.sh:/etc/periodic/hourly/ddns:ro
+    environment:
+    - GCLOUD_INSTANCE                   # Value-less variables are set in .env
+    - GCLOUD_ZONE
+    - CLOUDFLARE_ZONE_ID
+    - CLOUDFLARE_ZONE_TOKEN
+    - DOMAIN
+    command: >
+      sh -c 'apk --update add jq &&
+             ln -sf /proc/1/fd/1 /var/log/ddns.log &&
+             crond -f -d 8'
+
+volumes:
+  caddycerts:
