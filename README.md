@@ -2,7 +2,7 @@
 
 Bitwarden installation optimized for Google Cloud's 'always free' f1-micro compute instance
 
-This is a quick-start guide. Read about this project in more detail here.
+This is a quick-start guide. Read about this project in more detail [here](https://bradford.la/2020/self-host-bitwarden-on-google-cloud).
 
 ---
 
