@@ -44,24 +44,19 @@ services:
     - DOMAIN                            # Value-less variables are set in .env
     - EMAIL
 
+
   ddns:
-    # Cloud SDK Docker alpine image provides gcloud utility used in dynamic dns script ddns.sh
-    # https://cloud.google.com/sdk/docs/downloads-docker
-    image: gcr.io/google.com/cloudsdktool/cloud-sdk:alpine
+    # This provides a ddclient dynamic dns updating cron which is as simple as running it
+    # and editing the ddns/config/ddclient.conf file
+    # https://github.com/linuxserver/docker-ddclient
+    image: linuxserver/ddclient
     restart: always
     container_name: ddns
     volumes:
-    - ${PWD}/ddns/ddns.sh:/etc/periodic/hourly/ddns:ro
+    - ${PWD}/ddns:/config
     environment:
-    - GCLOUD_INSTANCE                   # Value-less variables are set in .env
-    - GCLOUD_ZONE
-    - CLOUDFLARE_ZONE_ID
-    - CLOUDFLARE_ZONE_TOKEN
-    - DOMAIN
-    command: >
-      sh -c 'apk --update add jq &&
-             ln -sf /proc/1/fd/1 /var/log/ddns.log &&
-             crond -f -d 8'
+    - PUID
+    - PGID
 
 volumes:
   caddycerts:
