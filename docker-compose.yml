@@ -10,7 +10,7 @@ services:
     restart: always
     container_name: bitwarden
     volumes:
-    - ${PWD}/bitwarden/data:/data
+    - ${PWD}/bitwarden:/data
     environment:
     - LOG_FILE=/data/bitwarden.log
     - WEBSOCKET_ENABLED=true            # required for websockets
@@ -72,7 +72,7 @@ services:
     container_name: fail2ban
     volumes:
     - ${PWD}/fail2ban:/data
-    - ${PWD}/bitwarden/data:/bitwarden:ro
+    - ${PWD}/bitwarden:/bitwarden:ro
     network_mode: "host"
     privileged: true
     cap_add:
