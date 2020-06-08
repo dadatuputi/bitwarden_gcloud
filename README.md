@@ -54,7 +54,7 @@ docker-compose version 1.25.5, build 8a1c60f
 
 ### Configure Environmental Variables with `.env`
 
-This file is self-explanitory and requires certain values such as a domain name, Cloudflare API tokens, etc. 
+I provide `.env.template` which should be copied to `.env` and filled out; filling it out is self-explanitory and requires certain values such as a domain name, Cloudflare API tokens, etc. 
 
 ### Configure `fail2ban` (_optional_)
 
