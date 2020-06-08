@@ -2,6 +2,8 @@
 
 Bitwarden installation optimized for Google Cloud's 'always free' f1-micro compute instance
 
+> _Note: if you follow these instructions the end product is a self-hosted instance of Bitwarden running in the cloud and will be free **unless** you exceed the 1GB egress per month or have egress to China or Australia. I talk about best practices to help avoid China/AUS egress, but there's a chance you can get charges from that so please keep that in mind._
+
 This is a quick-start guide. Read about this project in more detail [here](https://bradford.la/2020/self-host-bitwarden-on-google-cloud).
 
 ---
@@ -53,6 +55,17 @@ docker-compose version 1.25.5, build 8a1c60f
 ### Configure Environmental Variables with `.env`
 
 This file is self-explanitory and requires certain values such as a domain name, Cloudflare API tokens, etc. 
+
+### Configure `fail2ban` (_optional_)
+
+`fail2ban` stops brute-force attempts at your vault. To configure how long a ban is and how many attempts will trigger a ban, edit `fail2ban/jail.d/jail.local`:
+
+```conf
+bantime = 6h <- how long to enforce the ip ban
+maxretry = 5  <- number of times to retry until a ban occurs
+```
+
+This will work out of the box - no `fail2ban` configuration is needed unless you want e-mail alerts of bans. To enable this, enter the SMTP settings in `.env`, and follow the instructions in `fail2ban/jail.d/jail.local` by uncommenting and entering `destemail` and `sender` and uncommenting the `action_mwl` action in the `bitwarden` and `bitwarden-admin` jails in the same file.
 
 ## Step 3: Start Services
 

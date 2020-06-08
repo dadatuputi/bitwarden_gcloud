@@ -1,5 +1,6 @@
 version: '3'
 
+
 services:
   bitwarden:
     # Standard Bitwarden is very resource-heavy and cannot run on micro cloud instances
@@ -16,6 +17,7 @@ services:
     - SHOW_PASSWORD_HINT=false
     - DOMAIN=https://${DOMAIN}          # DOMAIN is set in .env but doesn't have protocol prefix
     - SMTP_FROM_NAME=Bitwarden (${DOMAIN})
+    - IP_HEADER=X-Forwarded-For
     - ADMIN_TOKEN                       # Value-less variables are set in .env
     - SIGNUPS_ALLOWED
     - SMTP_HOST
@@ -24,7 +26,8 @@ services:
     - SMTP_SSL
     - SMTP_USERNAME
     - SMTP_PASSWORD
-             
+    
+
   proxy:
     # Caddy provides an automatic HTTPS reverse proxy with Let's Encrypt cert provisioning
     # https://caddyserver.com/
@@ -57,6 +60,37 @@ services:
     environment:
     - PUID
     - PGID
+
+
+  fail2ban:
+    # This container implements fail2ban functionality, banning ips that 
+    # try to bruteforce your vault
+    # https://github.com/dani-garcia/bitwarden_rs/wiki/Fail2Ban-Setup
+    # https://github.com/crazy-max/docker-fail2ban
+    image: crazymax/fail2ban:latest
+    restart: always
+    container_name: fail2ban
+    volumes:
+    - ${PWD}/fail2ban:/data
+    - ${PWD}/bitwarden/data:/bitwarden:ro
+    network_mode: "host"
+    privileged: true
+    cap_add:
+    - NET_ADMIN
+    - NET_RAW
+    environment:
+    - F2B_DB_PURGE_AGE=30d
+    - F2B_LOG_TARGET=/data/fail2ban.log
+    - F2B_LOG_LEVEL=INFO
+    - F2B_IPTABLES_CHAIN=INPUT
+    - SSMTP_HOST=${SMTP_HOST}
+    - SSMTP_PORT=${SMTP_PORT}
+    - SSMTP_USER=${SMTP_USERNAME}
+    - SSMTP_PASSWORD=${SMTP_PASSWORD}
+    - SSMTP_HOSTNAME=Bitwarden (${DOMAIN})
+    - SSMTP_TLS=${SMTP_SSL}
+    - SSMTP_STARTTLS=YES
+
 
 volumes:
   caddycerts:
