@@ -63,7 +63,7 @@ services:
 
 
   fail2ban:
-    # This container implements fail2ban functionality, banning ips that 
+    # Implements fail2ban functionality, banning ips that 
     # try to bruteforce your vault
     # https://github.com/dani-garcia/bitwarden_rs/wiki/Fail2Ban-Setup
     # https://github.com/crazy-max/docker-fail2ban
@@ -90,6 +90,30 @@ services:
     - SSMTP_HOSTNAME=Bitwarden (${DOMAIN})
     - SSMTP_TLS=${SMTP_SSL}
     - SSMTP_STARTTLS=YES
+
+
+  countryban:
+    # The block script will block any country (defaults to CN and AU)
+    # https://hub.docker.com/_/alpine/
+    image: alpine:latest
+    restart: always
+    container_name: countryban
+    volumes:
+    - ${PWD}/countryblock/block.sh:/block.sh:ro
+    network_mode: "host"
+    privileged: true
+    cap_add:
+    - NET_ADMIN
+    - NET_RAW
+    environment:
+    - COUNTRIES
+    - UPDATE_CRON
+    command: >
+      sh -c 'apk --update --no-cache add ipset iptables ip6tables wget bash &&
+             ln -sf /proc/1/fd/1 /var/log/block.log &&
+             echo "$UPDATE_CRON bash /block.sh update" >> /etc/crontabs/root &&
+             crond -d 8 &&
+             bash /block.sh start'    
 
 
 volumes:
