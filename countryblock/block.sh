@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
-# countryblock script
+# countryblock script for docker
+# <scriptname> start will set up iptables and download the specified country ipsets and wait
+# until it receives a INT, TERM, or KILL signal, at which time it will clean up iptables
+# <scriptname> update will update the ipsets, good for a cron job
 # Copyright (C) 2020 Bradford Law
 # Licensed under the terms of MIT
 
@@ -12,8 +15,8 @@ CHAIN=countryblock
 
 printf "Starting blocklist and ipset construction for countries: %b\n" "$COUNTRIES" > $LOG
 
-	# Our rules
-	FORWARD_RULE="FORWARD -j $CHAIN"
+# Reused iptables rules
+FORWARD_RULE="FORWARD -j $CHAIN"
 
 
 setup() {
