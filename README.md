@@ -8,6 +8,14 @@ This is a quick-start guide. Read about this project in more detail [here](https
 
 ---
 
+## Features
+
+* Bitwarden self-hosted
+* Automatic https certificate management through Caddy 2 proxy
+* Dynamic DNS updates through ddclient
+* Blocking brute-force attempts with fail2ban
+* Country-wide blocking through iptables and ipset
+
 ## Pre-requisites
 
 Before you start, ensure you have the following:
@@ -66,6 +74,14 @@ maxretry = 5  <- number of times to retry until a ban occurs
 ```
 
 This will work out of the box - no `fail2ban` configuration is needed unless you want e-mail alerts of bans. To enable this, enter the SMTP settings in `.env`, and follow the instructions in `fail2ban/jail.d/jail.local` by uncommenting and entering `destemail` and `sender` and uncommenting the `action_mwl` action in the `bitwarden` and `bitwarden-admin` jails in the same file.
+
+### Configure Country-wide Blocking
+
+The `countryblock` container will block ip addresses from countries specified in `.env` under `COUNTRIES`. China, Hong Kong, and Australia (CN, HK, AU) are blocked by default because Google Cloud will charge egress to those countries under the free tier. You may add any country you like to that list, or clear it out entirely if you don't want to block those countries. Be aware, however, you'll probably be charged for any traffic to those countries, even from bots or crawlers. 
+
+This country-wide blocklist will be updated daily at midnight, but you can change the `UPDATE_CRON` variable in `.env` to make it more or less regular. 
+
+These block-lists are pulled from <www.ipdeny.com> on each update. 
 
 ## Step 3: Start Services
 
