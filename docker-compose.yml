@@ -34,6 +34,8 @@ services:
     image: caddy/caddy:alpine
     restart: always
     container_name: proxy
+    depends_on:
+    - bitwarden
     volumes:
     - ${PWD}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
     - ${PWD}/caddy/data:/data
@@ -60,6 +62,7 @@ services:
     environment:
     - PUID
     - PGID
+    - TZ
 
 
   fail2ban:
@@ -70,6 +73,8 @@ services:
     image: crazymax/fail2ban:latest
     restart: always
     container_name: fail2ban
+    depends_on:
+    - bitwarden
     volumes:
     - ${PWD}/fail2ban:/data
     - ${PWD}/bitwarden:/bitwarden:ro
@@ -90,6 +95,7 @@ services:
     - SSMTP_HOSTNAME=Bitwarden (${DOMAIN})
     - SSMTP_TLS=${SMTP_SSL}
     - SSMTP_STARTTLS=YES
+    - TZ
 
 
   countryban:
@@ -107,13 +113,29 @@ services:
     - NET_RAW
     environment:
     - COUNTRIES
-    - UPDATE_CRON
+    - COUNTRYBLOCK_SCHEDULE
+    - TZ
     command: >
-      sh -c 'apk --update --no-cache add ipset iptables ip6tables wget bash &&
+      sh -c 'apk --update --no-cache add ipset iptables ip6tables wget bash tzdata &&
              ln -sf /proc/1/fd/1 /var/log/block.log &&
-             echo "$UPDATE_CRON bash /block.sh update" >> /etc/crontabs/root &&
+             echo "$COUNTRYBLOCK_SCHEDULE bash /block.sh update" >> /etc/crontabs/root &&
              crond -d 8 &&
              bash /block.sh start'    
+
+
+  watchtower:
+    # Watchtower will pull down your new image, gracefully shut down your existing container 
+    # and restart it with the same options that were used when it was deployed initially
+    # https://github.com/containrrr/watchtower
+    image: containrrr/watchtower
+    restart: always
+    container_name: watchtower
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+    - WATCHTOWER_CLEANUP=true
+    - WATCHTOWER_SCHEDULE
+    - TZ
 
 
 volumes:

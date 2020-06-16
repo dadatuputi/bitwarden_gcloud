@@ -79,7 +79,7 @@ This will work out of the box - no `fail2ban` configuration is needed unless you
 
 The `countryblock` container will block ip addresses from countries specified in `.env` under `COUNTRIES`. China, Hong Kong, and Australia (CN, HK, AU) are blocked by default because Google Cloud will charge egress to those countries under the free tier. You may add any country you like to that list, or clear it out entirely if you don't want to block those countries. Be aware, however, you'll probably be charged for any traffic to those countries, even from bots or crawlers. 
 
-This country-wide blocklist will be updated daily at midnight, but you can change the `UPDATE_CRON` variable in `.env` to make it more or less regular. 
+This country-wide blocklist will be updated daily at midnight, but you can change the `COUNTRYBLOCK_SCHEDULE` variable in `.env` to suit your needs. 
 
 These block-lists are pulled from <www.ipdeny.com> on each update. 
 
