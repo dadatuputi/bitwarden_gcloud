@@ -1,7 +1,7 @@
 {$DOMAIN}:443 {
-  #Caddy on port 443 in container to bitwarden_rs private instance 
-  #Use it if Caddy exposed to the net 
-  #Doc about automatic HTTPS https://caddyserver.com/docs/automatic-https
+  # Caddy on port 443 in container to bitwarden_rs private instance 
+  # Use it if Caddy exposed to the net 
+  # Doc about automatic HTTPS https://caddyserver.com/docs/automatic-https
 
   log {
 	output file {$LOG_FILE} {
@@ -37,4 +37,5 @@
 
   # Proxy the Root directory to Rocket
   reverse_proxy bitwarden:80
+
 }
