@@ -98,12 +98,13 @@ services:
     - TZ
 
 
-  countryban:
+  countryblock:
     # The block script will block any country (defaults to CN and AU)
+    # Requires cap_add as listed and privileged because it uses iptables and ipset
     # https://hub.docker.com/_/alpine/
     image: alpine:latest
     restart: always
-    container_name: countryban
+    container_name: countryblock
     volumes:
     - ${PWD}/countryblock/block.sh:/block.sh:ro
     network_mode: "host"
