@@ -40,7 +40,7 @@ setup() {
 
 cleanup() {
 
-	# Clean up old rules (if they exist)
+	# Clean up old rules
 	iptables -D $FORWARD_RULE
 	iptables -F $CHAIN
 	iptables -X $CHAIN
@@ -74,12 +74,12 @@ update() {
 }
 
 if [ "$1" == "start" ]; then
-	# Clean up before run in case last run crashed
+	# Clean up old rules if they exist in case last run crashed
 	cleanup
 	setup
 	update
 
-	# Sit in an infinite loop waiting for SIGTERM
+	# Sleep indefinitely waiting for SIGTERM
 	trap "cleanup && exit 0" SIGINT SIGTERM SIGKILL
 	printf "$0: waiting for SIGINT SIGTERM or SIGKILL to clean up" > $LOG
 	sleep inf &
