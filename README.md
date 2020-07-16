@@ -75,13 +75,39 @@ maxretry = 5  <- number of times to retry until a ban occurs
 
 This will work out of the box - no `fail2ban` configuration is needed unless you want e-mail alerts of bans. To enable this, enter the SMTP settings in `.env`, and follow the instructions in `fail2ban/jail.d/jail.local` by uncommenting and entering `destemail` and `sender` and uncommenting the `action_mwl` action in the `bitwarden` and `bitwarden-admin` jails in the same file.
 
-### Configure Country-wide Blocking
+### Configure Country-wide Blocking (_optional_)
 
 The `countryblock` container will block ip addresses from countries specified in `.env` under `COUNTRIES`. China, Hong Kong, and Australia (CN, HK, AU) are blocked by default because Google Cloud will charge egress to those countries under the free tier. You may add any country you like to that list, or clear it out entirely if you don't want to block those countries. Be aware, however, you'll probably be charged for any traffic to those countries, even from bots or crawlers. 
 
 This country-wide blocklist will be updated daily at midnight, but you can change the `COUNTRYBLOCK_SCHEDULE` variable in `.env` to suit your needs. 
 
 These block-lists are pulled from <www.ipdeny.com> on each update. 
+
+### Configure Automatic Rebooting After Updates (_optional_)
+
+Container-Optimized OS will automatically update itself, but the update will only be applied after a reboot. In order to ensure that you are using the most current operating system software, you can set a boot script that waits until an update has been applied to schedule a reboot.
+
+Before you start, ensure you have `compute-rw` scope for your bitwarden compute vm. If you used the `gcloud` command above, it includes that scope. If not, go to your Google Cloud console and edit the "Cloud API access scopes" to have "Compute Engine" show "Read Write". You need to shut down your compute vm in order to change this.
+
+Modify the script to set your local timezone and the time to schedule reboots: set the `TZ=` and `TIME=` variables in `utilities/reboot-on-update.sh`. By default the script will schedule reboots for 06:00 UTC. 
+
+From within your compute vm console, type the command `toolbox`. From within `toolbox`, find the `utilities` folder within `bitwarden_gcloud`. `toolbox` mounts the host filesystem under `/media/root`, so go there to find the folder. It will likely be in `/media/root/home/<google account name>/bitwarden_gcloud/utilities` - `cd` to that folder.
+
+Next, use `gcloud` to add the `reboot-on-update.sh` script to your vm's boot script metadata with the `add-metadata` [command](https://cloud.google.com/compute/docs/startupscript#startupscriptrunninginstances):
+
+```bash
+gcloud compute instances add-metadata <instance> --metadata-from-file startup-script=reboot-on-update.sh
+```
+
+You can confirm that your startup script has been added in your instance details under "Custom metadata" on the Compute Engine Console. 
+
+Next, restart your vm with the command `$ sudo reboot`. Once your vm has rebooted, you can confirm that the startup script was run with the command:
+
+```bash
+$ sudo journalctl -u google-startup-scripts.service
+```
+
+Now the script will wait until a reboot is pending and then schedule a reboot for the time configured in the script.
 
 ## Step 3: Start Services
 
