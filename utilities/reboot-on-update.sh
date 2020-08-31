@@ -9,5 +9,5 @@ TIME=06:00
 
 SCHEDULED=$(eval "date -d 'TZ=\"$TZ\" $TIME' +%H:%M")
 
-update_engine_client --block_until_reboot_is_needed
-shutdown -r $SCHEDULED
+sudo update_engine_client --block_until_reboot_is_needed
+sudo shutdown -r $SCHEDULED
