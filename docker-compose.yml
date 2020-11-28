@@ -26,6 +26,9 @@ services:
     - SMTP_SSL
     - SMTP_USERNAME
     - SMTP_PASSWORD
+    dns:
+    - 8.8.8.8
+    - 8.8.4.4
     
 
   proxy:
