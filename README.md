@@ -37,10 +37,16 @@ $ gcloud compute instances create bitwarden \
     --image-family cos-stable \
     --boot-disk-size=30GB \
     --tags http-server,https-server \
-    --scopes compute-ro
+    --scopes compute-rw
 ```
 
 You may change the zone to be closer to you or customize the name (`bitwarden`), but most of the other values should remain the same. 
+
+Next, create firewall rules to allow traffic to your VM. Bitwarden only serves encrypted traffic over HTTPS, but port 80 is needed for the Let's Encrypt challenges served by Caddy:
+```bash
+$ gcloud compute firewall-rules create bitwarden-http-ingress --action allow --target-tags http-server --rules tcp:80
+$ gcloud compute firewall-rules create bitwarden-https-ingress --action allow --target-tags https-server --rules tcp:443
+```
 
 ## Step 2: Pull and Configure Project
 
