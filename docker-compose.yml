@@ -4,9 +4,9 @@ version: '3'
 services:
   bitwarden:
     # Standard Bitwarden is very resource-heavy and cannot run on micro cloud instances
-    # Bitwarden Rust is a Rust (mostly) feature-complete implementation of Bitwarden
-    # https://github.com/dani-garcia/bitwarden_rs
-    image: bitwardenrs/server:alpine
+    # Vaultwarden is a Rust (mostly) feature-complete implementation of Bitwarden
+    # https://github.com/dani-garcia/vaultwarden
+    image: vaultwarden/server:alpine
     restart: always
     container_name: bitwarden
     volumes:
@@ -73,7 +73,7 @@ services:
   fail2ban:
     # Implements fail2ban functionality, banning ips that 
     # try to bruteforce your vault
-    # https://github.com/dani-garcia/bitwarden_rs/wiki/Fail2Ban-Setup
+    # https://github.com/dani-garcia/vaultwarden/wiki/Fail2Ban-Setup
     # https://github.com/crazy-max/docker-fail2ban
     image: crazymax/fail2ban:latest
     restart: always

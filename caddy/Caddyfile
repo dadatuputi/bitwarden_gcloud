@@ -1,5 +1,5 @@
 {$DOMAIN}:443 {
-  # Caddy on port 443 in container to bitwarden_rs private instance 
+  # Caddy on port 443 in container to vaultwarden private instance 
   # Use it if Caddy exposed to the net 
   # Doc about automatic HTTPS https://caddyserver.com/docs/automatic-https
 
