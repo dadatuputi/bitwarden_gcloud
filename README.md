@@ -124,3 +124,7 @@ $ docker-compose up
 ```
 
 You can now use your browser to visit your new Bitwarden site. 
+
+# Notes
+
+For a pure Cloudflare approach, see [this issue](https://github.com/dadatuputi/bitwarden_gcloud/issues/5).
