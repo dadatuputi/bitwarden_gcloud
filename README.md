@@ -25,7 +25,7 @@ Before you start, ensure you have the following:
 
 ## Step 1: Set up Google Cloud `f1-micro` Compute Engine Instance
 
-Google Cloud offers an '[always free](https://cloud.google.com/free/)' tier of their Compute Engine with one virtual core and ~600 MB of RAM (about 150 MB free depending on which OS you installed). [Bitwarden RS](https://github.com/dani-garcia/bitwarden_rs) runs well under these constraints; it's written in Rust and an ideal candidate for a micro instance. 
+Google Cloud offers an '[always free](https://cloud.google.com/free/)' tier of their Compute Engine with one virtual core and ~600 MB of RAM (about 150 MB free depending on which OS you installed). [Vaultwarden](https://github.com/dani-garcia/vaultwarden) runs well under these constraints; it's written in Rust and an ideal candidate for a micro instance. 
 
 Go to [Google Compute Engine](https://cloud.google.com/compute) and open a Cloud Shell. You may also create the instance manually following [the constraints of the free tier](https://cloud.google.com/free/docs/gcp-free-tier). In the Cloud Shell enter the following command to build the properly spec'd machine: 
 
