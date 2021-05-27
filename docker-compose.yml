@@ -9,8 +9,11 @@ services:
     image: vaultwarden/server:alpine
     restart: always
     container_name: bitwarden
+    depends_on: 
+    - proxy
     volumes:
     - ${PWD}/bitwarden:/data
+    - ${PWD}/utilities/backup.sh:/backup.sh:ro
     environment:
     - LOG_FILE=/data/bitwarden.log
     - WEBSOCKET_ENABLED=true            # required for websockets
@@ -31,7 +34,21 @@ services:
     - YUBICO_SECRET_KEY
     - YUBICO_SERVER
     - ORG_CREATE_USER
-    
+    - BACKUP
+    - BACKUP_DAYS
+    - BACKUP_EMAIL_FROM_NAME
+    - BACKUP_EMAIL_TO
+    - BACKUP_ENCRYPTION_KEY
+    command: >
+      sh -c 'if [ -n "$BACKUP" ]; 
+             then 
+               apk --update --no-cache add sqlite
+               ln -sf /proc/1/fd/1 /var/log/backup.log && 
+               echo "$BACKUP_SCHEDULE ash /backup.sh $BACKUP" >> /etc/crontabs/root && 
+               crond -d 8; 
+             fi &&
+             ash /backup.sh $BACKUP &&
+             exec /start.sh'
 
   proxy:
     # Caddy provides an automatic HTTPS reverse proxy with Let's Encrypt cert provisioning
@@ -39,8 +56,6 @@ services:
     image: caddy/caddy:alpine
     restart: always
     container_name: proxy
-    depends_on:
-    - bitwarden
     volumes:
     - ${PWD}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
     - ${PWD}/caddy/data:/data
@@ -62,6 +77,8 @@ services:
     image: linuxserver/ddclient
     restart: always
     container_name: ddns
+    depends_on: 
+    - bitwarden
     volumes:
     - ${PWD}/ddns:/config
     environment:
@@ -110,6 +127,8 @@ services:
     image: alpine:latest
     restart: always
     container_name: countryblock
+    depends_on: 
+    - bitwarden
     volumes:
     - ${PWD}/countryblock/block.sh:/block.sh:ro
     network_mode: "host"
@@ -136,6 +155,8 @@ services:
     image: containrrr/watchtower
     restart: always
     container_name: watchtower
+    depends_on: 
+    - bitwarden
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock
     environment:
