@@ -36,9 +36,13 @@ services:
     - ORG_CREATE_USER
     - BACKUP
     - BACKUP_DAYS
+    - BACKUP_DIR
     - BACKUP_EMAIL_FROM_NAME
-    - BACKUP_EMAIL_TO
     - BACKUP_ENCRYPTION_KEY
+    - BACKUP_EMAIL_TO
+    - BACKUP_EMAIL_NOTIFY
+    - BACKUP_RCLONE_CONF
+    - BACKUP_RCLONE_DEST
     command: >
       sh -c 'if [ -n "$BACKUP" ]; 
              then 
@@ -47,7 +51,6 @@ services:
                echo "$BACKUP_SCHEDULE ash /backup.sh $BACKUP" >> /etc/crontabs/root && 
                crond -d 8; 
              fi &&
-             ash /backup.sh $BACKUP &&
              exec /start.sh'
 
   proxy:

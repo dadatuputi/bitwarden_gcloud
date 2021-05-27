@@ -69,7 +69,7 @@ docker-compose version 1.25.5, build 8a1c60f
 ### Configure Environmental Variables with `.env`
 
 I provide `.env.template` which should be copied to `.env` and filled out; filling it out is self-explanitory and requires certain values such as a domain name, Cloudflare API tokens, etc. 
-Be aware that there is an optional backup section that allows you to have an encrypted backup regularly backed up and emailed or synced to cloud storage. 
+Be aware that there is an optional backup section that allows you to have an encrypted backup regularly backed up and emailed or synced to cloud storage. More documentation on this feature is available [here](https://bradford.la/2020/self-host-bitwarden-on-google-cloud/#configure-bitwarden-backups-optional).
 
 ### Configure `fail2ban` (_optional_)
 

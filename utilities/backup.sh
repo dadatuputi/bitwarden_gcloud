@@ -53,9 +53,8 @@ AuthPass=$SMTP_PASSWORD
 AuthMethod=$AUTH_METHOD
 FromLineOverride=yes
 EOF
-  printf "Configured %b\n" "$SSMTP_CONF" > $LOG
 
-  printf "Finished configuring email\n" > $LOG
+  printf "Finished configuring email (%b)\n" "$SSMTP_CONF" > $LOG
 }
 
 
@@ -64,12 +63,16 @@ EOF
 # $2: body
 # $3: attachment
 email_send() {
-  if [ -n $3 ]; then
+  if [ -n "$3" ]; then
     ATTACHMENT="-a $3 --"
   fi
-  echo "$2" | EMAIL="$BACKUP_EMAIL_FROM_NAME <$SMTP_FROM>" mutt -s "$1" $ATTACHMENT $BACKUP_EMAIL_TO
-
-  printf "Sent e-mail\n" > $LOG  
+  EMAIL_RESULT=$(printf "$2" | EMAIL="$BACKUP_EMAIL_FROM_NAME <$SMTP_FROM>" mutt -s "$1" $ATTACHMENT "$BACKUP_EMAIL_TO" 2>&1)
+  
+  if [ -n "$EMAIL_RESULT" ]; then
+    printf "Email error: %b\n" "$EMAIL_RESULT" > $LOG
+  else
+    printf "Sent e-mail (%b) to %b\n" "$1" "$BACKUP_EMAIL_TO" > $LOG  
+  fi
 }
 
 
@@ -81,7 +84,7 @@ email_body() {
   FILE=${1%%*.}
 
   # Email body messages
-  EMAIL_BODY_TAR="Email backup successfully run
+  EMAIL_BODY_TAR="Email backup successful.
 
 To restore, untar in the Bitwarden data directory:
     tar -zxf $FILE.tar.gz"
@@ -93,7 +96,22 @@ To restore, untar in the Bitwarden data directory:
   BODY=$EMAIL_BODY_TAR
   [ "$EXT" == "aes256" ] && BODY="$BODY\n\n $EMAIL_BODY_AES"
 
-  printf $BODY
+  printf "$BODY"
+}
+
+
+# Initialize rclone
+RCLONE=/usr/bin/rclone
+rclone_init() {
+  # Install rclone - https://wiki.alpinelinux.org/wiki/Rclone
+  curl -O https://downloads.rclone.org/rclone-current-linux-amd64.zip
+  unzip rclone-current-linux-amd64.zip
+  cd rclone-*-linux-amd64
+  cp rclone /usr/bin/
+  chown root:root $RCLONE
+  chmod 755 $RCLONE
+
+  printf "Rclone installed to %b\n" "$RCLONE" > $LOG
 }
 
 
@@ -125,13 +143,13 @@ make_backup() {
   BACKUP_FILE=$BACKUP_DIR/"bw_backup_$(date "+%F-%H%M%S").tar.gz"
 
   # If a password is provided, run it through openssl
-  if [ -n $BACKUP_ENCRYPTION_KEY ]; then
+  if [ -n "$BACKUP_ENCRYPTION_KEY" ]; then
     BACKUP_FILE=$BACKUP_FILE.aes256
     tar -czf - -C $SQL_BACKUP_DIR $SQL_NAME -C $DATA $FILES | openssl enc -e -aes256 -salt -pbkdf2 -pass pass:${BACKUP_ENCRYPTION_KEY} -out $BACKUP_FILE
   else
     tar -czf $BACKUP_FILE -C $SQL_BACKUP_DIR $SQL_NAME -C $DATA $FILES
   fi
-  printf "Backed up to %b\n" "$BACKUP_FILE" > $LOG
+  printf "Backup file created at %b\n" "$BACKUP_FILE" > $LOG
 
   # cleanup tmp folder
   rm -f $SQL_BACKUP_NAME
@@ -147,10 +165,14 @@ make_backup() {
 
 
 
-# Initialize e-mail if (using e-mail backup OR RCLONE_NOTIFY is set) AND ssmtp has not been configured
-if [ "$1" == "email" -o -n "$RCLONE_NOTIFY" ] && [ ! -f "$SSMTP_CONF" ]; then
+# Initialize e-mail if (using e-mail backup OR BACKUP_EMAIL_NOTIFY is set) AND ssmtp has not been configured
+if [ "$1" == "email" -o -n "$BACKUP_EMAIL_NOTIFY" ] && [ ! -f "$SSMTP_CONF" ]; then
   email_init
 fi
+# Initialize rclone if BACKUP=rclone and $(which rclone) is blank
+if [ "$1" == "rclone" -a -z "$(which rclone)" ]; then
+  rclone_init
+fi 
 
 
 # Handle E-mail Backup
@@ -161,11 +183,34 @@ if [ "$1" == "email" ]; then
   RESULT=$(make_backup)
   FILENAME=$(basename $RESULT)
   BODY=$(email_body $FILENAME)
-  email_send "Bitwarden Backup - $FILENAME" "$BODY" $RESULT
+  email_send "$BACKUP_EMAIL_FROM_NAME - $FILENAME" "$BODY" $RESULT
   
 
 # Handle rclone Backup
 elif [ "$1" == "rclone" ]; then
-  printf "Rclone backup selected - not implemented yet\n" > $LOG
+  printf "Running rclone backup\n" > $LOG
+  
+  # Only run if $BACKUP_RCLONE_CONF has been setup
+  if [ -s "$BACKUP_RCLONE_CONF" ]; then
+    RESULT=$(make_backup)
 
+    # Sync with rclone
+    REMOTE=$(rclone --config $BACKUP_RCLONE_CONF listremotes | head -n 1)
+    rclone --config $BACKUP_RCLONE_CONF sync $BACKUP_DIR $REMOTE$BACKUP_RCLONE_DEST
+
+    # Send email if configured
+    if [ -n "$BACKUP_EMAIL_NOTIFY" ]; then
+      email_send "$BACKUP_EMAIL_FROM_NAME - rclone backup completed" "Rclone backup completed"
+    fi
+  fi
+
+
+elif [ "$1" == "local" ]; then
+  printf "Running local backup\n" > $LOG
+  
+  RESULT=$(make_backup)
+
+  if [ -n "$BACKUP_EMAIL_NOTIFY" ]; then
+    email_send "$BACKUP_EMAIL_FROM_NAME - local backup completed" "Local backup completed"
+  fi
 fi
