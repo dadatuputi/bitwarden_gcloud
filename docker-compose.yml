@@ -147,6 +147,7 @@ services:
     command: >
       sh -c 'apk --update --no-cache add ipset iptables ip6tables wget bash tzdata &&
              ln -sf /proc/1/fd/1 /var/log/block.log &&
+             sed -i "/bash .block.sh update/d" /etc/crontabs/root &&
              echo "$COUNTRYBLOCK_SCHEDULE bash /block.sh update" >> /etc/crontabs/root &&
              crond -d 8 &&
              bash /block.sh start'    
