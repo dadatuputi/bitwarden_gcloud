@@ -47,7 +47,8 @@ services:
       sh -c 'if [ -n "$BACKUP" ]; 
              then 
                apk --update --no-cache add sqlite
-               ln -sf /proc/1/fd/1 /var/log/backup.log && 
+               ln -sf /proc/1/fd/1 /var/log/backup.log &&
+               sed -i "/ash .backup.sh /d" /etc/crontabs/root &&
                echo "$BACKUP_SCHEDULE ash /backup.sh $BACKUP" >> /etc/crontabs/root && 
                crond -d 8; 
              fi &&

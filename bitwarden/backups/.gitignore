@@ -2,6 +2,3 @@
 *
 # Except this file
 !.gitignore
-
-# Except backups folder
-!/backups
