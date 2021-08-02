@@ -1,6 +1,6 @@
 # Bitwarden self-hosted on Google Cloud for Free
 
-Bitwarden installation optimized for Google Cloud's 'always free' f1-micro compute instance
+Bitwarden installation optimized for Google Cloud's 'always free' e2-micro compute instance
 
 > _Note: if you follow these instructions the end product is a self-hosted instance of Bitwarden running in the cloud and will be free **unless** you exceed the 1GB egress per month or have egress to China or Australia. I talk about best practices to help avoid China/AUS egress, but there's a chance you can get charges from that so please keep that in mind._
 
@@ -23,7 +23,15 @@ Before you start, ensure you have the following:
 1. A Google Cloud account
 2. A Cloudflare-managed DNS site with an A record ready for Bitwarden
 
-## Step 1: Set up Google Cloud `f1-micro` Compute Engine Instance
+## If you're migrating from f1-micro free tier
+
+As of the 1st of august 2021, Google has added the e2-micro machine type to the free tier. Google has mailed existing f1-micro users with a suggestion to upgrade to the more powerful e2-micro type (transcript in [this reddit thread](https://www.reddit.com/r/googlecloud/comments/oo55s1/upgraded_free_tier_f1micro_vm_to_an_e2micro/)). Google wrote to upgrade from f1-micro to e2-micro to avoid incurring charges for continuing to use f1-micro after August 31, 2021. 
+
+Upgrading existing f1-micro instances running bitwarden_gcloud is easy can be done as follows. First shut down your VM instance, then you edit the vm instance to machine type e2-micro using the google cloud GUI or cloud shell. Then simply boot the VM again and everything should start again. 
+
+Note that after shutting down and booting the new machine type, it may take a while for the DNS record's TTL to expire and point to the new IP which gets changed after a shutdown. 
+
+## Step 1: Set up Google Cloud `e2-micro` Compute Engine Instance
 
 Google Cloud offers an '[always free](https://cloud.google.com/free/)' tier of their Compute Engine with one virtual core and ~600 MB of RAM (about 150 MB free depending on which OS you installed). [Vaultwarden](https://github.com/dani-garcia/vaultwarden) runs well under these constraints; it's written in Rust and an ideal candidate for a micro instance. 
 
@@ -31,7 +39,7 @@ Go to [Google Compute Engine](https://cloud.google.com/compute) and open a Cloud
 
 ```bash
 $ gcloud compute instances create bitwarden \
-    --machine-type f1-micro \
+    --machine-type e2-micro \
     --zone us-central1-a \
     --image-project cos-cloud \
     --image-family cos-stable \
