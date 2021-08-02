@@ -62,7 +62,7 @@ update() {
 	
 		# Pull the latest IP set for country
 		ZONEFILE=$COUNTRY_LOWER-aggregated.zone
-		wget -N https://www.ipdeny.com/ipblocks/data/aggregated/$ZONEFILE
+		wget --no-check-certificate -N https://www.ipdeny.com/ipblocks/data/aggregated/$ZONEFILE
 		printf "Downloaded zone file for %b\n" "$country" > $LOG
 	
 		# Add each IP address from the downloaded list into the ipset 'china'
