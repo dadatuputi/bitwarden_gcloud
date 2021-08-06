@@ -10,7 +10,7 @@ This is a quick-start guide. Read about this project in more detail [here](https
 
 ## Features
 
-* vaultwarden self-hosted
+* Vaultwarden self-hosted
 * Automatic https certificate management through Caddy 2 proxy
 * Dynamic DNS updates through ddclient
 * Blocking brute-force attempts with fail2ban
