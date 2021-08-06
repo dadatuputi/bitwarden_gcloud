@@ -181,7 +181,7 @@ $ docker container logs ddclient
 
 You'll see the following message if everything is working:
 
-SUCCESS: <FQDN> -- Updated Successfully to <External IP Address>
+SUCCESS: "FQDN" -- Updated Successfully to "External IP Address"
 
 ## Step 6: Create Weekly Snapshot Schedule to protect VM: (_optional_)
 
