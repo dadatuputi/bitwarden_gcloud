@@ -2,24 +2,24 @@ version: '3'
 
 
 services:
-  bitwarden:
+  vaultwarden:
     # Standard Bitwarden is very resource-heavy and cannot run on micro cloud instances
-    # Vaultwarden is a Rust (mostly) feature-complete implementation of Bitwarden
+    # Vaultwarden is a Rust (mostly) feature-complete implementation of bitwarden
     # https://github.com/dani-garcia/vaultwarden
     image: vaultwarden/server:alpine
     restart: always
-    container_name: bitwarden
+    container_name: vaultwarden
     depends_on: 
     - proxy
     volumes:
-    - ${PWD}/bitwarden:/data
+    - ${PWD}/vaultwarden:/data
     - ${PWD}/utilities/backup.sh:/backup.sh:ro
     environment:
-    - LOG_FILE=/data/bitwarden.log
+    - LOG_FILE=/data/vaultwarden.log
     - WEBSOCKET_ENABLED=true            # required for websockets
     - SHOW_PASSWORD_HINT=false
     - DOMAIN=https://${DOMAIN}          # DOMAIN is set in .env but doesn't have protocol prefix
-    - SMTP_FROM_NAME=Bitwarden (${DOMAIN})
+    - SMTP_FROM_NAME=vaultwarden (${DOMAIN})
     - IP_HEADER=X-Forwarded-For
     - ADMIN_TOKEN                       # Value-less variables are set in .env
     - SIGNUPS_ALLOWED
@@ -82,7 +82,7 @@ services:
     restart: always
     container_name: ddns
     depends_on: 
-    - bitwarden
+    - vaultwarden
     volumes:
     - ${PWD}/ddns:/config
     environment:
@@ -100,10 +100,10 @@ services:
     restart: always
     container_name: fail2ban
     depends_on:
-    - bitwarden
+    - vaultwarden
     volumes:
     - ${PWD}/fail2ban:/data
-    - ${PWD}/bitwarden:/bitwarden:ro
+    - ${PWD}/vaultwarden:/vaultwarden:ro
     network_mode: "host"
     privileged: true
     cap_add:
@@ -118,7 +118,7 @@ services:
     - SSMTP_PORT=${SMTP_PORT}
     - SSMTP_USER=${SMTP_USERNAME}
     - SSMTP_PASSWORD=${SMTP_PASSWORD}
-    - SSMTP_HOSTNAME=Bitwarden (${DOMAIN})
+    - SSMTP_HOSTNAME=vaultwarden (${DOMAIN})
     - SSMTP_TLS=${SMTP_SSL}
     - SSMTP_STARTTLS=YES
     - TZ
@@ -132,7 +132,7 @@ services:
     restart: always
     container_name: countryblock
     depends_on: 
-    - bitwarden
+    - vaultwarden
     volumes:
     - ${PWD}/countryblock/block.sh:/block.sh:ro
     network_mode: "host"
@@ -161,7 +161,7 @@ services:
     restart: always
     container_name: watchtower
     depends_on: 
-    - bitwarden
+    - vaultwarden
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock
     environment:
