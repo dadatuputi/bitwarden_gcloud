@@ -23,7 +23,7 @@ Before you start, ensure you have the following:
 1. A Google Cloud account
 2. A Cloudflare-managed DNS site with an A record ready for vaultwarden
 
-## Step 1: Set up Google Cloud `f1-micro` Compute Engine Instance
+## Step 1: Set up Google Cloud `e2-micro` Compute Engine Instance
 
 Google Cloud offers an '[always free](https://cloud.google.com/free/)' tier of their Compute Engine with one virtual core and ~600 MB of RAM (about 150 MB free depending on which OS you installed). [Vaultwarden](https://github.com/dani-garcia/vaultwarden) runs well under these constraints; it's written in Rust and an ideal candidate for a micro instance. 
 
