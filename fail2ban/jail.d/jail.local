@@ -1,25 +1,25 @@
 [DEFAULT]
-bantime = 6h
+bantime = 24h
 findtime = 6h
-maxretry = 5
+maxretry = 3
 # To enable email alerts, uncomment `destemail` and `sender` below,
 # enter your destination and sender emails in the fields,
 # and uncomment the `action_mwl` action in the jails below.
 #destemail = email you want to send to
 #sender = email you want to send from
 
-[bitwarden]
+[vaultwarden]
 enabled = true
 port = 80,443,8081
-filter = bitwarden
-logpath = /bitwarden/bitwarden.log
-action = iptables-allports[name=bitwarden, chain=FORWARD]
+filter = vaultwarden
+logpath = /vaultwarden/vaultwarden.log
+action = iptables-allports[name=vaultwarden, chain=FORWARD]
 #         %(action_mwl)s
 
-[bitwarden-admin]
+[vaultwarden-admin]
 enabled = true
 port = 80,443
-filter = bitwarden-admin
-logpath = /bitwarden/bitwarden.log
-action = iptables-allports[name=bitwarden, chain=FORWARD]
+filter = vaultwarden-admin
+logpath = /vaultwarden/vaultwarden.log
+action = iptables-allports[name=vaultwarden, chain=FORWARD]
 #         %(action_mwl)s

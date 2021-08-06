@@ -7,7 +7,7 @@
 LOG=/var/log/backup.log
 SSMTP_CONF=/etc/ssmtp/ssmtp.conf
 
-# Bitwarden Email settings - usually provided as environment variables for but may be set below:
+# vaultwarden Email settings - usually provided as environment variables for but may be set below:
 # SMTP_HOST=
 # SMTP_FROM=
 # SMTP_PORT=
@@ -34,9 +34,9 @@ convert_bool() {
 
 
 # Initialize email settings
-# Direct application of Bitwarden SMTP settings except:
+# Direct application of vaultwarden SMTP settings except:
 # * UseTLS - converts true to yes and false to no
-# * UseSTARTTLS - Bitwarden's SMTP_EXPLICIT_TLS is backwards, so flip from true/false to no/yes
+# * UseSTARTTLS - vaultwarden's SMTP_EXPLICIT_TLS is backwards, so flip from true/false to no/yes
 #   * see https://github.com/dani-garcia/vaultwarden/issues/851
 email_init() {
   # Install ssmtp
@@ -86,7 +86,7 @@ email_body() {
   # Email body messages
   EMAIL_BODY_TAR="Email backup successful.
 
-To restore, untar in the Bitwarden data directory:
+To restore, untar in the vaultwarden data directory:
     tar -zxf $FILE.tar.gz"
 
   EMAIL_BODY_AES="To decrypt an encrypted backup (.aes256), first decrypt using openssl:
@@ -116,7 +116,7 @@ rclone_init() {
 
 
 # Create backup and prune old backups
-# Borrowed heavily from https://github.com/shivpatel/bitwarden_rs-local-backup
+# Borrowed heavily from https://github.com/shivpatel/vaultwarden_rs-local-backup
 # with the addition of backing up:
 # * attachments directory
 # * sends directory
