@@ -25,6 +25,7 @@ services:
     - SIGNUPS_ALLOWED
     - SMTP_HOST
     - SMTP_FROM
+    - SMTP_FROM_NAME
     - SMTP_PORT
     - SMTP_SSL
     - SMTP_EXPLICIT_TLS
