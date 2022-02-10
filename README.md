@@ -23,13 +23,9 @@ Before you start, ensure you have the following:
 1. A Google Cloud account
 2. A Cloudflare-managed DNS site with an A record ready for Bitwarden
 
-## If you're migrating from f1-micro free tier
+### f1-micro -> e2-micro migration
 
-As of the 1st of august 2021, Google has added the e2-micro machine type to the free tier. Google has mailed existing f1-micro users with a suggestion to upgrade to the more powerful e2-micro type (transcript in [this reddit thread](https://www.reddit.com/r/googlecloud/comments/oo55s1/upgraded_free_tier_f1micro_vm_to_an_e2micro/)). Google wrote to upgrade from f1-micro to e2-micro to avoid incurring charges for continuing to use f1-micro after August 31, 2021. 
-
-Upgrading existing f1-micro instances running bitwarden_gcloud is easy can be done as follows. First shut down your VM instance, then you edit the vm instance to machine type e2-micro using the google cloud GUI or cloud shell. Then simply boot the VM again and everything should start again. 
-
-Note that after shutting down and booting the new machine type, it may take a while for the DNS record's TTL to expire and point to the new IP which gets changed after a shutdown. 
+_As of 1 August 2021, Google added the e2-micro machine type to the free tier. Google has contacted existing f1-micro users with a suggestion to upgrade to the more powerful e2-micro type (details in [this reddit thread](https://www.reddit.com/r/googlecloud/comments/oo55s1/upgraded_free_tier_f1micro_vm_to_an_e2micro/)). Upgrading existing f1-micro instances running bitwarden_gcloud is easy can be accomplished following steps at the bottom of this README._
 
 ## Step 1: Set up Google Cloud `e2-micro` Compute Engine Instance
 
@@ -134,6 +130,15 @@ $ docker-compose up
 
 You can now use your browser to visit your new Bitwarden site. 
 
-# Notes
+## f1-micro to e2-micro Migration
 
+Follow these steps to migrate from the previous free tier f1-micro to the new free tier e2-micro.
+
+1.  Shut down your VM instance
+2.  Edit the vm instance to machine type e2-micro using the google cloud GUI or cloud shell. 
+3.  Boot the VM again and everything should start as before. 
+
+Note that after shutting down and booting the new machine type, it may take a while for the DNS record's TTL to expire and point to the new IP which gets changed after a shutdown. 
+
+# Notes
 For a pure Cloudflare approach, see [this issue](https://github.com/dadatuputi/bitwarden_gcloud/issues/5).
