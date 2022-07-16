@@ -1,8 +1,8 @@
-# Bitwarden self-hosted on Google Cloud for Free
+# Vaultwarden self-hosted on Google Cloud for Free
 
-Bitwarden installation optimized for Google Cloud's 'always free' e2-micro compute instance
+Vaultwarden installation optimized for Google Cloud's 'always free' e2-micro compute instance
 
-> _Note: if you follow these instructions the end product is a self-hosted instance of Bitwarden running in the cloud and will be free **unless** you exceed the 1GB egress per month or have egress to China or Australia. I talk about best practices to help avoid China/AUS egress, but there's a chance you can get charges from that so please keep that in mind._
+> _Note: if you follow these instructions the end product is a self-hosted instance of Vaultwarden running in the cloud and will be free **unless** you exceed the 1GB egress per month or have egress to China or Australia. I talk about best practices to help avoid China/AUS egress, but there's a chance you can get charges from that so please keep that in mind._
 
 This is a quick-start guide. Read about this project in more detail [here](https://bradford.la/2020/self-host-bitwarden-on-google-cloud).
 
@@ -10,7 +10,7 @@ This is a quick-start guide. Read about this project in more detail [here](https
 
 ## Features
 
-* Bitwarden self-hosted
+* Vaultwarden self-hosted
 * Automatic https certificate management through Caddy 2 proxy
 * Dynamic DNS updates through ddclient
 * Blocking brute-force attempts with fail2ban
@@ -21,11 +21,11 @@ This is a quick-start guide. Read about this project in more detail [here](https
 Before you start, ensure you have the following:
 
 1. A Google Cloud account
-2. A Cloudflare-managed DNS site with an A record ready for Bitwarden
+2. A Cloudflare-managed DNS site with an A record ready for Vaultwarden
 
 ### f1-micro -> e2-micro migration
 
-_As of 1 August 2021, Google added the e2-micro machine type to the free tier. Google has contacted existing f1-micro users with a suggestion to upgrade to the more powerful e2-micro type (details in [this reddit thread](https://www.reddit.com/r/googlecloud/comments/oo55s1/upgraded_free_tier_f1micro_vm_to_an_e2micro/)). Upgrading existing f1-micro instances running bitwarden_gcloud is easy can be accomplished following steps at the bottom of this README._
+_As of 1 August 2021, Google added the e2-micro machine type to the free tier. Google has contacted existing f1-micro users with a suggestion to upgrade to the more powerful e2-micro type (details in [this reddit thread](https://www.reddit.com/r/googlecloud/comments/oo55s1/upgraded_free_tier_f1micro_vm_to_an_e2micro/)). Upgrading existing f1-micro instances running vaultwarden_gcloud is easy can be accomplished following steps at the bottom of this README._
 
 ## Step 1: Set up Google Cloud `e2-micro` Compute Engine Instance
 
@@ -34,7 +34,7 @@ Google Cloud offers an '[always free](https://cloud.google.com/free/)' tier of t
 Go to [Google Compute Engine](https://cloud.google.com/compute) and open a Cloud Shell. You may also create the instance manually following [the constraints of the free tier](https://cloud.google.com/free/docs/gcp-free-tier). In the Cloud Shell enter the following command to build the properly spec'd machine: 
 
 ```bash
-$ gcloud compute instances create bitwarden \
+$ gcloud compute instances create vaultwarden \
     --machine-type e2-micro \
     --zone us-central1-a \
     --image-project cos-cloud \
@@ -44,12 +44,12 @@ $ gcloud compute instances create bitwarden \
     --scopes compute-rw
 ```
 
-You may change the zone to be closer to you or customize the name (`bitwarden`), but most of the other values should remain the same. 
+You may change the zone to be closer to you or customize the name (`vaultwarden`), but most of the other values should remain the same. 
 
-Next, create firewall rules to allow traffic to your VM. Bitwarden only serves encrypted traffic over HTTPS, but port 80 is needed for the Let's Encrypt challenges served by Caddy:
+Next, create firewall rules to allow traffic to your VM. Vaultwarden only serves encrypted traffic over HTTPS, but port 80 is needed for the Let's Encrypt challenges served by Caddy:
 ```bash
-$ gcloud compute firewall-rules create bitwarden-http-ingress --action allow --target-tags http-server --rules tcp:80
-$ gcloud compute firewall-rules create bitwarden-https-ingress --action allow --target-tags https-server --rules tcp:443
+$ gcloud compute firewall-rules create vaultwarden-http-ingress --action allow --target-tags http-server --rules tcp:80
+$ gcloud compute firewall-rules create vaultwarden-https-ingress --action allow --target-tags https-server --rules tcp:443
 ```
 
 ## Step 2: Pull and Configure Project
@@ -57,8 +57,8 @@ $ gcloud compute firewall-rules create bitwarden-https-ingress --action allow --
 Enter a shell on the new instance and clone this repo:
 
 ```bash
-$ git clone https://github.com/dadatuputi/bitwarden_gcloud.git
-$ cd bitwarden_gcloud
+$ git clone https://github.com/zucht/vaultwarden_gcloud.git
+$ cd vaultwarden_gcloud
 ```
 
 Set up the docker-compose alias by using the included script:
@@ -84,7 +84,7 @@ bantime = 6h <- how long to enforce the ip ban
 maxretry = 5  <- number of times to retry until a ban occurs
 ```
 
-This will work out of the box - no `fail2ban` configuration is needed unless you want e-mail alerts of bans. To enable this, enter the SMTP settings in `.env`, and follow the instructions in `fail2ban/jail.d/jail.local` by uncommenting and entering `destemail` and `sender` and uncommenting the `action_mwl` action in the `bitwarden` and `bitwarden-admin` jails in the same file.
+This will work out of the box - no `fail2ban` configuration is needed unless you want e-mail alerts of bans. To enable this, enter the SMTP settings in `.env`, and follow the instructions in `fail2ban/jail.d/jail.local` by uncommenting and entering `destemail` and `sender` and uncommenting the `action_mwl` action in the `vaultwarden` and `vaultwarden-admin` jails in the same file.
 
 ### Configure Country-wide Blocking (_optional_)
 
@@ -98,11 +98,11 @@ These block-lists are pulled from <www.ipdeny.com> on each update.
 
 Container-Optimized OS will automatically update itself, but the update will only be applied after a reboot. In order to ensure that you are using the most current operating system software, you can set a boot script that waits until an update has been applied to schedule a reboot.
 
-Before you start, ensure you have `compute-rw` scope for your bitwarden compute vm. If you used the `gcloud` command above, it includes that scope. If not, go to your Google Cloud console and edit the "Cloud API access scopes" to have "Compute Engine" show "Read Write". You need to shut down your compute vm in order to change this.
+Before you start, ensure you have `compute-rw` scope for your Vaultwarden compute vm. If you used the `gcloud` command above, it includes that scope. If not, go to your Google Cloud console and edit the "Cloud API access scopes" to have "Compute Engine" show "Read Write". You need to shut down your compute vm in order to change this.
 
 Modify the script to set your local timezone and the time to schedule reboots: set the `TZ=` and `TIME=` variables in `utilities/reboot-on-update.sh`. By default the script will schedule reboots for 06:00 UTC. 
 
-From within your compute vm console, type the command `toolbox`. From within `toolbox`, find the `utilities` folder within `bitwarden_gcloud`. `toolbox` mounts the host filesystem under `/media/root`, so go there to find the folder. It will likely be in `/media/root/home/<google account name>/bitwarden_gcloud/utilities` - `cd` to that folder.
+From within your compute vm console, type the command `toolbox`. From within `toolbox`, find the `utilities` folder within `vaultwarden_gcloud`. `toolbox` mounts the host filesystem under `/media/root`, so go there to find the folder. It will likely be in `/media/root/home/<google account name>/vaultwarden_gcloud/utilities` - `cd` to that folder.
 
 Next, use `gcloud` to add the `reboot-on-update.sh` script to your vm's boot script metadata with the `add-metadata` [command](https://cloud.google.com/compute/docs/startupscript#startupscriptrunninginstances):
 
@@ -128,7 +128,7 @@ To start up, use `docker-compose`:
 $ docker-compose up
 ```
 
-You can now use your browser to visit your new Bitwarden site. 
+You can now use your browser to visit your new Vaultwarden site. 
 
 ## f1-micro to e2-micro Migration
 
