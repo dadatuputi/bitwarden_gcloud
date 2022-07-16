@@ -8,18 +8,18 @@ maxretry = 5
 #destemail = email you want to send to
 #sender = email you want to send from
 
-[bitwarden]
+[vaultwarden]
 enabled = true
 port = 80,443,8081
-filter = bitwarden
-logpath = /bitwarden/bitwarden.log
-action = iptables-allports[name=bitwarden, chain=FORWARD]
+filter = vaultwarden
+logpath = /vaultwarden/vaultwarden.log
+action = iptables-allports[name=vaultwarden, chain=FORWARD]
 #         %(action_mwl)s
 
-[bitwarden-admin]
+[vaultwarden-admin]
 enabled = true
 port = 80,443
-filter = bitwarden-admin
-logpath = /bitwarden/bitwarden.log
-action = iptables-allports[name=bitwarden, chain=FORWARD]
+filter = vaultwarden-admin
+logpath = /vaultwarden/vaultwarden.log
+action = iptables-allports[name=vaultwarden-admin, chain=FORWARD]
 #         %(action_mwl)s
