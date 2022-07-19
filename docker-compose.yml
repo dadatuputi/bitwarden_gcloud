@@ -26,8 +26,7 @@ services:
     - SMTP_HOST
     - SMTP_FROM
     - SMTP_PORT
-    - SMTP_SSL
-    - SMTP_EXPLICIT_TLS
+    - SMTP_SECURITY
     - SMTP_USERNAME
     - SMTP_PASSWORD
     - YUBICO_CLIENT_ID
@@ -119,7 +118,7 @@ services:
     - SSMTP_USER=${SMTP_USERNAME}
     - SSMTP_PASSWORD=${SMTP_PASSWORD}
     - SSMTP_HOSTNAME=Bitwarden (${DOMAIN})
-    - SSMTP_TLS=${SMTP_SSL}
+    - SSMTP_TLS=${SMTP_TLS}
     - SSMTP_STARTTLS=YES
     - TZ
 
