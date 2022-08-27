@@ -11,8 +11,7 @@ MUTTRC=/tmp/muttrc
 # SMTP_HOST=
 # SMTP_FROM=
 # SMTP_PORT=
-# SMTP_SSL=
-# SMTP_EXPLICIT_TLS=
+# SMTP_SECURITY=
 # SMTP_USERNAME=
 # SMTP_PASSWORD
 AUTH_METHOD=LOGIN
@@ -22,30 +21,18 @@ AUTH_METHOD=LOGIN
 # BACKUP_EMAIL_TO=
 
 
-# Convert "tRuE" and "FaLsE" to "yes" and "no" for ssmtp.conf
-# $1: string to convert
-convert_bool() {
-  case $1 in
-    ([Tt][Rr][Uu][Ee]) echo yes;;
-    ([Ff][Aa][Ll][Ss][Ee]) echo no;;
-    (*) echo ERROR;;
-  esac
-}
-
-
 # Initialize email settings
-# Direct application of Bitwarden SMTP settings except:
-# * UseTLS - converts true to yes and false to no
-# * UseSTARTTLS - Bitwarden's SMTP_EXPLICIT_TLS is backwards, so flip from true/false to no/yes
-#   * see https://github.com/dani-garcia/vaultwarden/issues/851
 email_init() {
   apk --update --no-cache add mutt
-  if [ "$(convert_bool "$SMTP_EXPLICIT_TLS")" == "yes" ]; then
+  if [ "$SMTP_SECURITY" == "force_tls" ]; then
+    MUTT_SSL_KEY=ssl_force_tls
     SMTP_PROTO=smtps
   else
+    MUTT_SSL_KEY=ssl_starttls
     SMTP_PROTO=smtp
   fi
   cat >"$MUTTRC" <<EOF
+set ${MUTT_SSL_KEY}=yes
 set smtp_url="${SMTP_PROTO}://${SMTP_USERNAME}@${SMTP_HOST}:${SMTP_PORT}"
 set smtp_pass="${SMTP_PASSWORD}"
 EOF
