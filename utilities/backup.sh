@@ -62,7 +62,7 @@ email_send() {
 # $1: backup filename
 email_body() {
   EXT=${1##*.}
-  FILE=${1%%*.}
+  FILE=${1%%.*}
 
   # Email body messages
   EMAIL_BODY_TAR="Email backup successful.
