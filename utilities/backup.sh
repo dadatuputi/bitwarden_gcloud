@@ -68,10 +68,10 @@ email_body() {
   EMAIL_BODY_TAR="Email backup successful.
 
 To restore, untar in the Bitwarden data directory:
-    tar -zxf $FILE"
+    tar -zxf $FILE.tar.gz"
 
   EMAIL_BODY_AES="To decrypt an encrypted backup (.aes256), first decrypt using openssl:
-    openssl enc -d -aes256 -salt -pbkdf2 -pass pass:<password> -in $FILE.aes256 -out $FILE"
+    openssl enc -d -aes256 -salt -pbkdf2 -pass pass:<password> -in $FILE.tar.gz.aes256 -out $FILE.tar.gz"
 
 
   BODY=$EMAIL_BODY_TAR
