@@ -177,7 +177,7 @@ elif [ "$1" == "rclone" ]; then
 
     # Sync with rclone
     REMOTE=$(rclone --config $BACKUP_RCLONE_CONF listremotes | head -n 1)
-    rclone --config $BACKUP_RCLONE_CONF sync $BACKUP_DIR $REMOTE$BACKUP_RCLONE_DEST
+    rclone --config $BACKUP_RCLONE_CONF sync $BACKUP_DIR "$REMOTE$BACKUP_RCLONE_DEST"
 
     # Send email if configured
     if [ -n "$BACKUP_EMAIL_NOTIFY" ]; then
