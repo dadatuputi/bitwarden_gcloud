@@ -13,7 +13,7 @@ CHAIN=countryblock
 # The list of country codes is provided as an environment variable or below
 # COUNTRIES=
 
-printf "Starting blocklist and ipset construction for countries: %b\n" "$COUNTRIES" > $LOG
+printf "Starting blocklist and ipset construction for countries: %b\n" "$COUNTRIES" >> $LOG
 
 # Reused iptables rules
 FORWARD_RULE="FORWARD -j $CHAIN"
@@ -34,7 +34,7 @@ setup() {
 		# Create firewall rule for each country
 		iptables -I $CHAIN -m set --match-set $COUNTRY_LOWER src -j DROP
 	done
-	printf "Created %b chain and rules and ipsets for countries %b\n" "$CHAIN" "$COUNTRIES" > $LOG
+	printf "Created %b chain and rules and ipsets for countries %b\n" "$CHAIN" "$COUNTRIES" >> $LOG
 	
 }
 
@@ -51,7 +51,7 @@ cleanup() {
                 # Flush ipset for each country
                 ipset flush $COUNTRY_LOWER
         done
-	printf "Removed %b chain and rules and flushed ipsets\n" "$CHAIN" > $LOG
+	printf "Removed %b chain and rules and flushed ipsets\n" "$CHAIN" >> $LOG
 }
 
 update() {
@@ -63,11 +63,11 @@ update() {
 		# Pull the latest IP set for country
 		ZONEFILE=$COUNTRY_LOWER-aggregated.zone
 		wget --no-check-certificate -N https://www.ipdeny.com/ipblocks/data/aggregated/$ZONEFILE
-		printf "Downloaded zone file for %b\n" "$country" > $LOG
+		printf "Downloaded zone file for %b\n" "$country" >> $LOG
 	
 		# Add each IP address from the downloaded list into the ipset 'china'
 		for i in $(cat $ZONEFILE ); do ipset -exist -A $COUNTRY_LOWER $i; done
-		printf "Added %b subnets to %b ipset\n" "$(wc -l $ZONEFILE)" "$country" > $LOG
+		printf "Added %b subnets to %b ipset\n" "$(wc -l $ZONEFILE)" "$country" >> $LOG
 
 	done
 
@@ -81,7 +81,7 @@ if [ "$1" == "start" ]; then
 
 	# Sleep indefinitely waiting for SIGTERM
 	trap "cleanup && exit 0" SIGINT SIGTERM SIGKILL
-	printf "$0: waiting for SIGINT SIGTERM or SIGKILL to clean up" > $LOG
+	printf "$0: waiting for SIGINT SIGTERM or SIGKILL to clean up" >> $LOG
 	sleep inf &
 	wait
 
