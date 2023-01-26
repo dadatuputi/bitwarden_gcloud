@@ -50,9 +50,9 @@ email_send() {
   fi
 
   if EMAIL_RESULT=$(printf "$2" | EMAIL="$BACKUP_EMAIL_FROM_NAME <$SMTP_FROM>" mutt -F "$MUTTRC" -s "$1" $ATTACHMENT "$BACKUP_EMAIL_TO" 2>&1); then
-    printf "Sent e-mail (%b) to %b\n" "$1" "$BACKUP_EMAIL_TO" > $LOG
+    printf "Sent e-mail (%b) to %b\n" "$1" "$BACKUP_EMAIL_TO" >> $LOG
   else
-    printf "Email error: %b\n" "$EMAIL_RESULT" > $LOG
+    printf "Email error: %b\n" "$EMAIL_RESULT" >> $LOG
   fi
 }
 
@@ -92,7 +92,7 @@ rclone_init() {
   chown root:root $RCLONE
   chmod 755 $RCLONE
 
-  printf "Rclone installed to %b\n" "$RCLONE" > $LOG
+  printf "Rclone installed to %b\n" "$RCLONE" >> $LOG
 }
 
 
@@ -130,7 +130,7 @@ make_backup() {
   else
     tar -czf $BACKUP_FILE -C $SQL_BACKUP_DIR $SQL_NAME -C $DATA $FILES
   fi
-  printf "Backup file created at %b\n" "$BACKUP_FILE" > $LOG
+  printf "Backup file created at %b\n" "$BACKUP_FILE" >> $LOG
 
   # cleanup tmp folder
   rm -f $SQL_BACKUP_NAME
@@ -158,7 +158,7 @@ fi
 
 # Handle E-mail Backup
 if [ "$1" == "email" ]; then
-  printf "Running email backup\n" > $LOG
+  printf "Running email backup\n" >> $LOG
 
   # Backup and send e-mail
   RESULT=$(make_backup)
@@ -169,7 +169,7 @@ if [ "$1" == "email" ]; then
 
 # Handle rclone Backup
 elif [ "$1" == "rclone" ]; then
-  printf "Running rclone backup\n" > $LOG
+  printf "Running rclone backup\n" >> $LOG
 
   # Only run if $BACKUP_RCLONE_CONF has been setup
   if [ -s "$BACKUP_RCLONE_CONF" ]; then
@@ -187,7 +187,7 @@ elif [ "$1" == "rclone" ]; then
 
 
 elif [ "$1" == "local" ]; then
-  printf "Running local backup\n" > $LOG
+  printf "Running local backup\n" >> $LOG
 
   RESULT=$(make_backup)
 
