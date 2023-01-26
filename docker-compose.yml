@@ -42,6 +42,7 @@ services:
     - BACKUP_EMAIL_NOTIFY
     - BACKUP_RCLONE_CONF
     - BACKUP_RCLONE_DEST
+    - TZ
     command: >
       sh -c 'if [ -n "$BACKUP" ]; 
              then 
@@ -55,8 +56,9 @@ services:
 
   proxy:
     # Caddy provides an automatic HTTPS reverse proxy with Let's Encrypt cert provisioning
+    # Uses local Dockerfile to include tzdata package
     # https://caddyserver.com/
-    image: caddy/caddy:alpine
+    build: ./docker/caddy
     restart: always
     container_name: proxy
     volumes:
@@ -71,6 +73,7 @@ services:
     - ACME_AGREE=true                   # agree to ACME for auto HTTPS
     - DOMAIN                            # Value-less variables are set in .env
     - EMAIL
+    - TZ
 
 
   ddns:
