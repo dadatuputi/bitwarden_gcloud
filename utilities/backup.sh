@@ -177,11 +177,20 @@ elif [ "$1" == "rclone" ]; then
 
     # Sync with rclone
     REMOTE=$(rclone --config $BACKUP_RCLONE_CONF listremotes | head -n 1)
-    rclone --config $BACKUP_RCLONE_CONF sync $BACKUP_DIR "$REMOTE$BACKUP_RCLONE_DEST"
+    ERR=$(rclone --config $BACKUP_RCLONE_CONF sync $BACKUP_DIR "$REMOTE$BACKUP_RCLONE_DEST" 2>&1)
+    SYNC_STATUS=$?
+
+    if [ $SYNC_STATUS -ne 0 ]; then
+       printf "Failed to sync:\n  %b\n" "$ERR" >> $LOG
+    fi
 
     # Send email if configured
     if [ -n "$BACKUP_EMAIL_NOTIFY" ]; then
-      email_send "$BACKUP_EMAIL_FROM_NAME - rclone backup completed" "Rclone backup completed"
+      if [ $SYNC_STATUS -eq 0 ]; then
+        email_send "$BACKUP_EMAIL_FROM_NAME - rclone backup completed" "Rclone backup completed"
+      else
+        email_send "$BACKUP_EMAIL_FROM_NAME - rclone backup failed" "$ERR"
+      fi
     fi
   fi
 
