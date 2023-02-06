@@ -74,6 +74,8 @@ services:
     - DOMAIN                            # Value-less variables are set in .env
     - EMAIL
     - TZ
+    labels:
+    - "com.centurylinklabs.watchtower.enable=false"
 
 
   ddns:
