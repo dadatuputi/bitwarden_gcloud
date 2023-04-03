@@ -1,5 +1,18 @@
 # Bitwarden self-hosted on Google Cloud for Free
 
+---
+
+> __3 April 2023 Alert__: [Recent changes to Vaultwarden](https://github.com/dani-garcia/vaultwarden/commit/ca417d32578c3b6224c5aa8df56eb776712941b7) may cause Vaultwarden to fail to start due to default environmental variables. `.env.default` has been updated in this repo, however, if you are affected, you must also update `.env` and comment out all `YUBICO_*` variables, so that they appear as:
+>
+> ```
+> #YUBICO_CLIENT_ID=
+> #YUBICO_SECRET_KEY=
+> #YUBICO_SERVER=
+> ```
+> Restart with `docker-compose`, and Vaultwarden should come up as normal. Credit to [@AySz88 for reporting this](https://github.com/dadatuputi/bitwarden_gcloud/issues/54).
+
+---
+
 Bitwarden installation optimized for Google Cloud's 'always free' e2-micro compute instance
 
 > _Note: if you follow these instructions the end product is a self-hosted instance of Bitwarden running in the cloud and will be free **unless** you exceed the 1GB egress per month or have egress to China or Australia. I talk about best practices to help avoid China/AUS egress, but there's a chance you can get charges from that so please keep that in mind._
