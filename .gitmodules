@@ -1,3 +1,0 @@
-[submodule "docker/caddy"]
-	path = docker/caddy
-	url = https://github.com/dadatuputi/bwgc_proxy.git
