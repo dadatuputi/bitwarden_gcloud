@@ -58,7 +58,8 @@ services:
     # Caddy provides an automatic HTTPS reverse proxy with Let's Encrypt cert provisioning
     # Uses local Dockerfile to include tzdata package
     # https://caddyserver.com/
-    build: ./docker/caddy
+    #build: ./docker/caddy              # backup, in case container registry is not responsive
+    image: ghcr.io/dadatuputi/bwgc_proxy:master
     restart: always
     container_name: proxy
     volumes:
@@ -74,8 +75,6 @@ services:
     - DOMAIN                            # Value-less variables are set in .env
     - EMAIL
     - TZ
-    labels:
-    - "com.centurylinklabs.watchtower.enable=false"
 
 
   ddns:
