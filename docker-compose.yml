@@ -122,7 +122,6 @@ services:
     # The block script will block any country (defaults to CN and AU)
     # Requires cap_add as listed and privileged because it uses iptables and ipset
     # https://hub.docker.com/_/alpine/
-    #image: alpine:latest
     #build: ./docker/countryblock                       # backup, in case container registry is not responsive
     image: ghcr.io/dadatuputi/bwgc_countryblock:master  # from https://github.com/dadatuputi/bwgc_countryblock
     restart: always
