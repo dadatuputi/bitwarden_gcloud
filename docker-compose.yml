@@ -49,8 +49,8 @@ services:
     # Caddy provides an automatic HTTPS reverse proxy with Let's Encrypt cert provisioning
     # Uses local Dockerfile to include tzdata package
     # https://caddyserver.com/
-    #build: ./docker/caddy                              # backup, in case container registry is not responsive
-    image: ghcr.io/dadatuputi/bwgc_proxy:master         # from https://github.com/dadatuputi/bwgc_proxy
+    #build: ./docker/proxy                              # backup, in case container registry is not responsive
+    image: ghcr.io/dadatuputi/bwgc_caddy:master         # from https://github.com/dadatuputi/bwgc_proxy
     restart: always
     container_name: proxy
     volumes:
