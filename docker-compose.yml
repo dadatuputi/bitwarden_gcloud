@@ -122,13 +122,13 @@ services:
     # The block script will block any country (defaults to CN and AU)
     # Requires cap_add as listed and privileged because it uses iptables and ipset
     # https://hub.docker.com/_/alpine/
-    image: alpine:latest
+    #image: alpine:latest
+    #build: ./docker/countryblock                       # backup, in case container registry is not responsive
+    image: ghcr.io/dadatuputi/bwgc_countryblock:master  # from https://github.com/dadatuputi/bwgc_countryblock
     restart: always
     container_name: countryblock
     depends_on: 
     - bitwarden
-    volumes:
-    - ${PWD}/countryblock/block.sh:/block.sh:ro
     network_mode: "host"
     privileged: true
     cap_add:
@@ -138,13 +138,6 @@ services:
     - COUNTRIES
     - COUNTRYBLOCK_SCHEDULE
     - TZ
-    command: >
-      sh -c 'apk --update --no-cache add ipset iptables ip6tables wget bash tzdata &&
-             ln -sf /proc/1/fd/1 /var/log/block.log &&
-             sed -i "/bash \\/block\\.sh update/d" /etc/crontabs/root &&
-             echo "$COUNTRYBLOCK_SCHEDULE bash /block.sh update" >> /etc/crontabs/root &&
-             crond -d 8 &&
-             bash /block.sh start'    
 
 
   watchtower:
