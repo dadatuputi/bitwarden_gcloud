@@ -16,7 +16,6 @@ services:
     - ${PWD}/bitwarden:/data
     environment:
     - LOG_FILE=/data/bitwarden.log
-    - WEBSOCKET_ENABLED=true            # required for websockets
     - SHOW_PASSWORD_HINT=false
     - DOMAIN=https://${DOMAIN}          # DOMAIN is set in .env but doesn't have protocol prefix
     - SMTP_FROM_NAME=Bitwarden (${DOMAIN})
