@@ -16,7 +16,7 @@
   encode gzip
 
   # Proxy everything Rocket
-  reverse_proxy vaultwarden:80 {
+  reverse_proxy bitwarden:80 {
        # Send the true remote IP to Rocket, so that vaultwarden can put this in the
        # log, so that fail2ban can ban the correct IP.
        header_up X-Real-IP {remote_host}
