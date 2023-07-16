@@ -16,7 +16,6 @@ services:
     - ${PWD}/bitwarden:/data
     environment:
     - LOG_FILE=/data/bitwarden.log
-    - WEBSOCKET_ENABLED=true            # required for websockets
     - SHOW_PASSWORD_HINT=false
     - DOMAIN=https://${DOMAIN}          # DOMAIN is set in .env but doesn't have protocol prefix
     - SMTP_FROM_NAME=Bitwarden (${DOMAIN})
@@ -33,6 +32,9 @@ services:
     - YUBICO_SECRET_KEY
     - YUBICO_SERVER
     - ORG_CREATION_USERS
+    - PUSH_ENABLED
+    - PUSH_INSTALLATION_ID
+    - PUSH_INSTALLATION_KEY
     - BACKUP
     - BACKUP_SCHEDULE
     - BACKUP_DAYS
