@@ -1,6 +1,3 @@
-[submodule "docker/bitwarden"]
-	path = docker/bitwarden
-	url = https://github.com/dadatuputi/bwgc_vaultwarden.git
 [submodule "docker/proxy"]
 	path = docker/proxy
 	url = https://github.com/dadatuputi/bwgc_caddy.git
