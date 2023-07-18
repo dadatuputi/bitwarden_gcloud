@@ -6,8 +6,7 @@ services:
     # Standard Bitwarden is very resource-heavy and cannot run on micro cloud instances
     # Vaultwarden is a Rust (mostly) feature-complete implementation of Bitwarden
     # https://github.com/dani-garcia/vaultwarden
-    #build: ./docker/bitwarden                                  # backup, in case container registry is not responsive
-    image: ghcr.io/dadatuputi/bwgc_vaultwarden:master           # from https://github.com/dadatuputi/bwgc_vaultwarden
+    image: vaultwarden/server:alpine 
     restart: always
     container_name: bitwarden
     depends_on: 
@@ -19,12 +18,12 @@ services:
     - WEBSOCKET_ENABLED=true            # required for websockets
     - SHOW_PASSWORD_HINT=false
     - DOMAIN=https://${DOMAIN}          # DOMAIN is set in .env but doesn't have protocol prefix
-    - SMTP_FROM_NAME=Bitwarden (${DOMAIN})
     - IP_HEADER=X-Forwarded-For
     - ADMIN_TOKEN                       # Value-less variables are set in .env
     - SIGNUPS_ALLOWED
     - SMTP_HOST
     - SMTP_FROM
+    - SMTP_FROM_NAME=Bitwarden (${DOMAIN})
     - SMTP_PORT
     - SMTP_SECURITY
     - SMTP_USERNAME
@@ -33,17 +32,38 @@ services:
     - YUBICO_SECRET_KEY
     - YUBICO_SERVER
     - ORG_CREATION_USERS
-    - BACKUP
+    - TZ
+
+
+  backup:
+    #build: ./docker/backup                                     # backup, in case container registry is not responsive
+    image: ghcr.io/dadatuputi/bwgc_backup:master                # from https://github.com/dadatuputi/bwgc_backup
+    restart: on-failure
+    container_name: backup
+    depends_on:
+    - bitwarden
+    volumes: 
+      - ${PWD}/bitwarden:/data:ro
+      - ${PWD}/bitwarden/backups:/data/backups 
+    environment:
+    - BACKUP                            # Value-less variables are set in .env
     - BACKUP_SCHEDULE
     - BACKUP_DAYS
     - BACKUP_DIR
-    - BACKUP_EMAIL_FROM_NAME
     - BACKUP_ENCRYPTION_KEY
     - BACKUP_EMAIL_TO
     - BACKUP_EMAIL_NOTIFY
     - BACKUP_RCLONE_CONF
     - BACKUP_RCLONE_DEST
+    - SMTP_HOST
+    - SMTP_FROM
+    - SMTP_FROM_NAME=Bitwarden Backup (${DOMAIN})
+    - SMTP_PORT
+    - SMTP_SECURITY
+    - SMTP_USERNAME
+    - SMTP_PASSWORD
     - TZ
+
 
   proxy:
     # Caddy provides an automatic HTTPS reverse proxy with Let's Encrypt cert provisioning

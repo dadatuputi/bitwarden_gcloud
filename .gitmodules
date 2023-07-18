@@ -1,9 +1,12 @@
 [submodule "docker/bitwarden"]
 	path = docker/bitwarden
 	url = https://github.com/dadatuputi/bwgc_vaultwarden.git
-[submodule "docker/docker/proxy"]
+[submodule "docker/proxy"]
 	path = docker/proxy
 	url = https://github.com/dadatuputi/bwgc_caddy.git
 [submodule "docker/countryblock"]
 	path = docker/countryblock
 	url = https://github.com/dadatuputi/bwgc_countryblock.git
+[submodule "docker/backup"]
+	path = docker/backup
+	url = https://github.com/dadatuputi/bwgc_backup.git
