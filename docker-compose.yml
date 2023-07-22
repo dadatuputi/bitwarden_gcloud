@@ -1,5 +1,12 @@
-version: '3'
+version: '3.4'
 
+x-logging: &default-logging
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "10"
+      compress: "true"
 
 services:
   bitwarden:
@@ -11,6 +18,7 @@ services:
     container_name: bitwarden
     depends_on: 
     - proxy
+    <<: *default-logging
     volumes:
     - ${PWD}/bitwarden:/data
     environment:
@@ -42,6 +50,7 @@ services:
     container_name: backup
     depends_on:
     - bitwarden
+    <<: *default-logging
     volumes: 
       - ${PWD}/bitwarden:/data:ro
       - ${PWD}/bitwarden/rclone:/data/rclone 
@@ -74,6 +83,7 @@ services:
     image: ghcr.io/dadatuputi/bwgc_caddy:master         # from https://github.com/dadatuputi/bwgc_proxy
     restart: always
     container_name: proxy
+    <<: *default-logging
     volumes:
     - ${PWD}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
     - ${PWD}/caddy/data:/data
@@ -82,7 +92,6 @@ services:
     - 80:80                             # Port 80 is necessary for Let's Encrypt ACME
     - 443:443
     environment:
-    - LOG_FILE=/data/logs/caddy.log
     - ACME_AGREE=true                   # agree to ACME for auto HTTPS
     - DOMAIN                            # Value-less variables are set in .env
     - EMAIL
@@ -96,6 +105,7 @@ services:
     image: linuxserver/ddclient
     restart: always
     container_name: ddns
+    <<: *default-logging
     depends_on: 
     - bitwarden
     volumes:
@@ -114,6 +124,7 @@ services:
     image: crazymax/fail2ban:latest
     restart: always
     container_name: fail2ban
+    <<: *default-logging
     depends_on:
     - bitwarden
     volumes:
@@ -147,6 +158,7 @@ services:
     image: ghcr.io/dadatuputi/bwgc_countryblock:master  # from https://github.com/dadatuputi/bwgc_countryblock
     restart: always
     container_name: countryblock
+    <<: *default-logging
     depends_on: 
     - bitwarden
     network_mode: "host"
@@ -167,6 +179,7 @@ services:
     image: containrrr/watchtower
     restart: always
     container_name: watchtower
+    <<: *default-logging
     depends_on: 
     - bitwarden
     volumes:

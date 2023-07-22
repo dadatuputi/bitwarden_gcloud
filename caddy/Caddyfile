@@ -4,11 +4,8 @@
   # Doc about automatic HTTPS https://caddyserver.com/docs/automatic-https
 
   log {
-	output file {$LOG_FILE} {
-        roll_size 50MiB # https://caddyserver.com/docs/caddyfile/directives/log#log
-        roll_keep 5 # https://caddyserver.com/docs/caddyfile/directives/log#log
-    }
-    level INFO
+	output stderr
+    	level INFO
   }
 
   # Uncomment only one of the 2 lines. Depending if you provide your own cert or request one from Let's Encrypt
