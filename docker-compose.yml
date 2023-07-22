@@ -43,7 +43,8 @@ services:
     depends_on:
     - bitwarden
     volumes: 
-      - ${PWD}/bitwarden:/data
+      - ${PWD}/bitwarden:/data:ro
+      - ${PWD}/bitwarden/rclone:/data/rclone 
       - ${PWD}/bitwarden/backups:/data/backups 
     environment:
     - BACKUP                            # Value-less variables are set in .env
