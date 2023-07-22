@@ -15,7 +15,7 @@
 
 ## Features
 
-* Bitwarden self-hosted (via Vaultwarden)
+* Bitwarden self-hosted (via Vaultwarden) on Google Cloud 'always free' e2-micro tier 
 * Automatic https certificate management through Caddy 2 proxy
 * Dynamic DNS updates through ddclient
 * Blocking brute-force attempts with fail2ban
