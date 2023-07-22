@@ -23,7 +23,6 @@ services:
     - ${PWD}/bitwarden:/data
     environment:
     - LOG_FILE=/data/bitwarden.log
-    - WEBSOCKET_ENABLED=true            # required for websockets
     - SHOW_PASSWORD_HINT=false
     - DOMAIN=https://${DOMAIN}          # DOMAIN is set in .env but doesn't have protocol prefix
     - IP_HEADER=X-Forwarded-For
@@ -36,6 +35,9 @@ services:
     - SMTP_SECURITY
     - SMTP_USERNAME
     - SMTP_PASSWORD
+    - PUSH_ENABLED
+    - PUSH_INSTALLATION_ID
+    - PUSH_INSTALLATION_KEY
     - YUBICO_CLIENT_ID
     - YUBICO_SECRET_KEY
     - YUBICO_SERVER

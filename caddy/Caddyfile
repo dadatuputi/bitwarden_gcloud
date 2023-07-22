@@ -8,8 +8,10 @@
     	level INFO
   }
 
-  # Uncomment only one of the 2 lines. Depending if you provide your own cert or request one from Let's Encrypt
+  # Uncomment only one of the 2 lines:
+  # Provide your own cert 
   # tls {$SSLCERTIFICATE} {$SSLKEY}
+  # Request a cert from Let's Encrypt using ACME HTTP-01
   tls {$EMAIL}
 
   encode zstd gzip
@@ -25,14 +27,11 @@
        X-Robots-Tag "none"
        # Server name remove
        -Server
-   }
-  # The negotiation endpoint is also proxied to Rocket
-  reverse_proxy /notifications/hub/negotiate bitwarden:80
-
-  # Notifications redirected to the websockets server
-  reverse_proxy /notifications/hub bitwarden:3012
-
-  # Proxy the Root directory to Rocket
-  reverse_proxy bitwarden:80
-
+  }	
+  
+  reverse_proxy bitwarden:80 {
+       # Send the true remote IP to Rocket, so that vaultwarden can put this in the
+       # log, so that fail2ban can ban the correct IP.
+       header_up X-Real-IP {remote_host}
+  }
 }
