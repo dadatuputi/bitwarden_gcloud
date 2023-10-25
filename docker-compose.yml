@@ -8,6 +8,7 @@ x-logging: &default-logging
       max-file: "10"
       compress: "true"
 
+
 services:
   bitwarden:
     # Standard Bitwarden is very resource-heavy and cannot run on micro cloud instances
@@ -54,6 +55,7 @@ services:
     - bitwarden
     <<: *default-logging
     volumes: 
+      - ${PWD}/.env:/.env:ro
       - ${PWD}/bitwarden:/data:ro
       - ${PWD}/bitwarden/rclone:/data/rclone 
       - ${PWD}/bitwarden/backups:/data/backups 
@@ -67,6 +69,7 @@ services:
     - BACKUP_EMAIL_NOTIFY
     - BACKUP_RCLONE_CONF
     - BACKUP_RCLONE_DEST
+    - BACKUP_ENV
     - SMTP_HOST
     - SMTP_FROM
     - SMTP_FROM_NAME=Bitwarden Backup (${DOMAIN})
