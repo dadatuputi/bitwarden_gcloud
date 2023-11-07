@@ -5,7 +5,7 @@ ALIAS=$'alias docker-compose=\'docker run --rm \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "$PWD:$PWD" \
     -w="$PWD" \
-    docker/compose\''
+    docker compose\''
 echo -e "$ALIAS" >> ~/.bash_alias
 
 # Include ~/.bash_alias in ~/.bashrc
