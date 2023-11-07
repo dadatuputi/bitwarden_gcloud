@@ -151,7 +151,7 @@ services:
     - SSMTP_PASSWORD=${SMTP_PASSWORD}
     - SSMTP_HOSTNAME=Bitwarden (${DOMAIN})
     - SSMTP_TLS=${SMTP_TLS}
-    - SSMTP_STARTTLS=YES
+    - SSMTP_STARTTLS
     - TZ
 
 
