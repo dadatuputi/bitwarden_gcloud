@@ -26,7 +26,7 @@ services:
     - LOG_FILE=/data/bitwarden.log
     - SHOW_PASSWORD_HINT=false
     - DOMAIN=https://${DOMAIN}          # DOMAIN is set in .env but doesn't have protocol prefix
-    - IP_HEADER=X-Forwarded-For
+    - IP_HEADER=X-Real-IP
     - ADMIN_TOKEN                       # Value-less variables are set in .env
     - SIGNUPS_ALLOWED
     - SMTP_HOST
