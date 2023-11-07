@@ -15,6 +15,20 @@
 Follow the [guide in the wiki](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation) to install and configure Bitwarden self-hosted on Google Cloud
 
 ## Changelog
+2.0.2 - 7 November 2023
+
+* Improve `fail2ban` SMTP env variable documentation in `.env.template` (#79)
+* Update IP Header env var (#77)
+* Push `fail2ban` logs to STDOUT / docker logging
+* Update `docker-compose` to latest version (#76). Requires manual updating of `~/.bash_alias` with the following command:
+
+```bash
+$ docker-compose version
+$ sed -i "s|docker/compose|docker compose|g" ~/.bash_alias
+$ source ~/.bash_alias
+$ docker-compose version
+```
+
 2.0.1 - 25 October 2023
 
 * Update backup option to include `.env` for full restoration. Off by default. Please encrypt your backup if including `.env`
