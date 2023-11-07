@@ -26,7 +26,7 @@ services:
     - LOG_FILE=/data/bitwarden.log
     - SHOW_PASSWORD_HINT=false
     - DOMAIN=https://${DOMAIN}          # DOMAIN is set in .env but doesn't have protocol prefix
-    - IP_HEADER=X-Forwarded-For
+    - IP_HEADER=X-Real-IP
     - ADMIN_TOKEN                       # Value-less variables are set in .env
     - SIGNUPS_ALLOWED
     - SMTP_HOST
@@ -142,7 +142,6 @@ services:
     - NET_RAW
     environment:
     - F2B_DB_PURGE_AGE=30d
-    - F2B_LOG_TARGET=/data/fail2ban.log
     - F2B_LOG_LEVEL=INFO
     - F2B_IPTABLES_CHAIN=INPUT
     - SSMTP_HOST=${SMTP_HOST}
