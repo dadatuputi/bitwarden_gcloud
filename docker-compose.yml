@@ -14,7 +14,7 @@ services:
     # Standard Bitwarden is very resource-heavy and cannot run on micro cloud instances
     # Vaultwarden is a Rust (mostly) feature-complete implementation of Bitwarden
     # https://github.com/dani-garcia/vaultwarden
-    image: vaultwarden/server:alpine 
+    image: vaultwarden/server:latest-alpine
     restart: always
     container_name: bitwarden
     depends_on: 
