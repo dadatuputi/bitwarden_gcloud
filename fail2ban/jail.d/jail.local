@@ -2,11 +2,8 @@
 bantime = 6h
 findtime = 6h
 maxretry = 5
-# To enable email alerts, uncomment `destemail` and `sender` below,
-# enter your destination and sender emails in the fields,
-# and uncomment the `action_mwl` action in the jails below.
-#destemail = email you want to send to
-#sender = email you want to send from
+# To enable email alerts, uncomment the smtp.py actions in the jails below,
+# entering your destination and sender emails in the appropriate fields
 
 [bitwarden]
 enabled = true
@@ -14,7 +11,7 @@ port = 80,443,8081
 filter = bitwarden
 logpath = /bitwarden/bitwarden.log
 action = iptables-allports[name=bitwarden, chain=FORWARD]
-#         %(action_mwl)s
+#         smtp.py[host=localhost:2500, sendername=Fail2Ban, sender=noreply@mail.com, dest=you@mail.com]
 
 [bitwarden-admin]
 enabled = true
@@ -22,4 +19,4 @@ port = 80,443
 filter = bitwarden-admin
 logpath = /bitwarden/bitwarden.log
 action = iptables-allports[name=bitwarden, chain=FORWARD]
-#         %(action_mwl)s
+#         smtp.py[host=localhost:2500, sendername=Fail2Ban, sender=noreply@mail.com, dest=you@mail.com]
