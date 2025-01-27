@@ -2,8 +2,11 @@
 bantime = 6h
 findtime = 6h
 maxretry = 5
-# To enable email alerts, uncomment the smtp.py actions in the jails below,
-# entering your destination and sender emails in the appropriate fields
+
+# Email Alert Configuration:
+# 1. Uncomment the smtp.py lines below - keep the exact spacing before 'smtp.py'
+# 2. Set 'sender' to match SMTP_FROM in your .env file
+# 3. Update 'dest' to your notification email
 
 [bitwarden]
 enabled = true
