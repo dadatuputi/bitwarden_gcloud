@@ -1,5 +1,3 @@
-version: '3.4'
-
 x-logging: &default-logging
   logging:
     driver: "json-file"
@@ -17,7 +15,7 @@ services:
     image: vaultwarden/server:latest-alpine
     restart: always
     container_name: bitwarden
-    depends_on: 
+    depends_on:
     - proxy
     <<: *default-logging
     volumes:
@@ -54,11 +52,11 @@ services:
     depends_on:
     - bitwarden
     <<: *default-logging
-    volumes: 
+    volumes:
       - ${PWD}/.env:/.env:ro
       - ${PWD}/bitwarden:/data:ro
-      - ${PWD}/bitwarden/rclone:/data/rclone 
-      - ${PWD}/bitwarden/backups:/data/backups 
+      - ${PWD}/bitwarden/rclone:/data/rclone
+      - ${PWD}/bitwarden/backups:/data/backups
     environment:
     - BACKUP                            # Value-less variables are set in .env
     - BACKUP_SCHEDULE
@@ -111,7 +109,7 @@ services:
     restart: always
     container_name: ddns
     <<: *default-logging
-    depends_on: 
+    depends_on:
     - bitwarden
     volumes:
     - ${PWD}/ddns:/config
@@ -121,8 +119,30 @@ services:
     - TZ
 
 
+  # Uncomment if you want fail2ban to send e-mails,
+  # and adjust the depends_on directive in the fail2ban service,
+  # see https://github.com/crazy-max/docker-fail2ban/pull/169/files
+  # msmtpd:
+  #   image: crazymax/msmtpd:latest
+  #   restart: always
+  #   container_name: fail2ban_msmtpd
+  #   <<: *default-logging
+  #   ports:
+  #   - "127.0.0.1:2500:2500"
+  #   environment:
+  #   - TZ
+  #   - SMTP_HOST
+  #   - SMTP_PORT
+  #   - SMTP_AUTH=on
+  #   - SMTP_USER=${SMTP_USERNAME}
+  #   - SMTP_PASSWORD
+  #   - SMTP_FROM
+  #   - SMTP_TLS
+  #   - SMTP_STARTTLS
+
+
   fail2ban:
-    # Implements fail2ban functionality, banning ips that 
+    # Implements fail2ban functionality, banning ips that
     # try to bruteforce your vault
     # https://github.com/dani-garcia/vaultwarden/wiki/Fail2Ban-Setup
     # https://github.com/crazy-max/docker-fail2ban
@@ -136,7 +156,6 @@ services:
     - ${PWD}/fail2ban:/data
     - ${PWD}/bitwarden:/bitwarden:ro
     network_mode: "host"
-    privileged: true
     cap_add:
     - NET_ADMIN
     - NET_RAW
@@ -144,13 +163,6 @@ services:
     - F2B_DB_PURGE_AGE=30d
     - F2B_LOG_LEVEL=INFO
     - F2B_IPTABLES_CHAIN=INPUT
-    - SSMTP_HOST=${SMTP_HOST}
-    - SSMTP_PORT=${SMTP_PORT}
-    - SSMTP_USER=${SMTP_USERNAME}
-    - SSMTP_PASSWORD=${SMTP_PASSWORD}
-    - SSMTP_HOSTNAME=Bitwarden (${DOMAIN})
-    - SSMTP_TLS=${SMTP_TLS}
-    - SSMTP_STARTTLS
     - TZ
 
 
@@ -163,7 +175,7 @@ services:
     restart: always
     container_name: countryblock
     <<: *default-logging
-    depends_on: 
+    depends_on:
     - bitwarden
     network_mode: "host"
     privileged: true
@@ -177,14 +189,14 @@ services:
 
 
   watchtower:
-    # Watchtower will pull down your new image, gracefully shut down your existing container 
+    # Watchtower will pull down your new image, gracefully shut down your existing container
     # and restart it with the same options that were used when it was deployed initially
     # https://github.com/containrrr/watchtower
     image: containrrr/watchtower
     restart: always
     container_name: watchtower
     <<: *default-logging
-    depends_on: 
+    depends_on:
     - bitwarden
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock
