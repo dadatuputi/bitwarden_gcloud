@@ -3,30 +3,39 @@
   # Use it if Caddy exposed to the net 
   # Doc about automatic HTTPS https://caddyserver.com/docs/automatic-https
 
+  # Output logs to stderr so log rotation, etc is handled by docker
   log {
 	output stderr
     	level INFO
   }
 
-  # Uncomment only one of the 2 lines:
-  # Provide your own cert 
-  # tls {$SSLCERTIFICATE} {$SSLKEY}
-  # Request a cert from Let's Encrypt using ACME HTTP-01
+  # Uncomment this if you want to get a cert via ACME (Let's Encrypt or ZeroSSL).
   tls {$EMAIL}
+
+  # Or uncomment this if you're providing your own cert. You would also use this option
+  # if you're running behind Cloudflare.
+  # tls {$SSL_CERT_PATH} {$SSL_KEY_PATH}
 
   encode zstd gzip
 
+  # If you want to use FIDO2 WebAuthn, set X-Frame-Options to "SAMEORIGIN" or the Browser will block those requests
   header / {
        # Enable HTTP Strict Transport Security (HSTS)
        Strict-Transport-Security "max-age=31536000;"
-       # Enable cross-site filter (XSS) and tell browser to block detected attacks
-       X-XSS-Protection "1; mode=block"
+       # Disable cross-site filter (XSS)
+       X-XSS-Protection "0"
        # Disallow the site to be rendered within a frame (clickjacking protection)
        X-Frame-Options "DENY"
        # Prevent search engines from indexing (optional)
-       X-Robots-Tag "none"
+       X-Robots-Tag "noindex, nofollow"
+       # Disallow sniffing of X-Content-Type-Options
+       X-Content-Type-Options "nosniff"       
        # Server name remove
        -Server
+       # Remove X-Powered-By though this shouldn't be an issue, better opsec to remove
+       -X-Powered-By
+       # Remove Last-Modified because etag is the same and is as effective
+       -Last-Modified
   }	
   
   reverse_proxy bitwarden:80 {
