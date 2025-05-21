@@ -54,9 +54,10 @@ services:
     <<: *default-logging
     volumes:
       - ${PWD}/.env:/.env:ro
-      - ${PWD}/bitwarden:/data:ro
+      - ${PWD}/bitwarden:/data
       - ${PWD}/bitwarden/rclone:/data/rclone
       - ${PWD}/bitwarden/backups:/data/backups
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
     - BACKUP                            # Value-less variables are set in .env
     - BACKUP_SCHEDULE
@@ -138,7 +139,6 @@ services:
   #   - SMTP_PASSWORD
   #   - SMTP_FROM
   #   - SMTP_TLS
-  #   - SMTP_STARTTLS
 
 
   fail2ban:
@@ -155,6 +155,8 @@ services:
     volumes:
     - ${PWD}/fail2ban:/data
     - ${PWD}/bitwarden:/bitwarden:ro
+    - /var/log:/var/log:ro
+    - /run/systemd/journal:/run/systemd/journal:ro 
     network_mode: "host"
     cap_add:
     - NET_ADMIN

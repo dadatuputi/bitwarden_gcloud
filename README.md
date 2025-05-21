@@ -15,6 +15,10 @@
 Follow the [guide in the wiki](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation) to install and configure Bitwarden self-hosted on Google Cloud
 
 ## Changelog
+2.0.3 - 21 May 2025
+
+* Added backup restore feature to backup image, [documented](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Backup#backup-restore)
+
 2.0.2 - 7 November 2023
 
 * Improve `fail2ban` SMTP env variable documentation in `.env.template` (#79)
