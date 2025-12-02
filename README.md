@@ -11,6 +11,14 @@
 * Country-wide blocking through iptables and ipset
 * Automatic backups
 
+## Feature Container Projects
+
+This project uses containers maintained in other projects. If you have an issue to report for one of these features, use that project's issue tracker:
+
+* [Backup](https://github.com/dadatuputi/bwgc_backup) - Provides automatic backup services to this project.
+* [Caddy](https://github.com/dadatuputi/bwgc_caddy) - Acts as the reverse proxy and handles TLS certificate renewals.
+* [Countryblock](https://github.com/dadatuputi/bwgc_countryblock) - Handles IP Tables block lists to block user-defined countries.
+
 ## Installation
 Follow the [guide in the wiki](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation) to install and configure Bitwarden self-hosted on Google Cloud
 
