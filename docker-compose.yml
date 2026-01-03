@@ -193,8 +193,8 @@ services:
   watchtower:
     # Watchtower will pull down your new image, gracefully shut down your existing container
     # and restart it with the same options that were used when it was deployed initially
-    # https://github.com/containrrr/watchtower
-    image: containrrr/watchtower
+    # https://github.com/nicholas-fedor/watchtower
+    image: nickfedor/watchtower
     restart: always
     container_name: watchtower
     <<: *default-logging
