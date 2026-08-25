@@ -19,9 +19,17 @@
   encode zstd gzip
 
   # If you want to use FIDO2 WebAuthn, set X-Frame-Options to "SAMEORIGIN" or the Browser will block those requests
-  header / {
+  # No path matcher here on purpose. In Caddy v2 a bare "/" is an *exact*
+  # path match, so "header / { ... }" applied these headers to the root
+  # document only, leaving /admin, /api/* and /identity/* without them.
+  # An empty matcher applies them to every response from this site.
+  header {
        # Enable HTTP Strict Transport Security (HSTS)
        Strict-Transport-Security "max-age=31536000;"
+       # Stronger variant. Enable only once every subdomain of your domain
+       # can serve HTTPS. Note that "preload" is effectively irreversible
+       # for up to max-age once you submit the domain to the preload list.
+       # Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
        # Disable cross-site filter (XSS)
        X-XSS-Protection "0"
        # Disallow the site to be rendered within a frame (clickjacking protection)
