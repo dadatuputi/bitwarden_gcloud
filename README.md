@@ -60,14 +60,25 @@ $ docker-compose up -d --remove-orphans
 
 ### Restoring a backup
 
-The `backup` container no longer mounts the Docker socket, so it can no longer
-stop and start `bitwarden` on your behalf. Stop it yourself first:
+Restore overwrites `bitwarden/db.sqlite3` in place. **Stop the vault first.**
 
 ```
 $ docker-compose stop bitwarden
-$ docker exec -it backup ash /restore.sh
+$ docker exec -it backup backup restore /data/backups/<backup-file>
 $ docker-compose start bitwarden
 ```
+
+The `backup` container no longer mounts the Docker socket, so it cannot stop
+`bitwarden` for you. It will not stop *you* either: the image still ships
+`docker-cli`, so the script's `command -v docker` check still passes, the
+`docker stop` call then fails to reach a daemon, and the script logs a warning
+and **continues with the restore regardless**. Overwriting the database while
+vaultwarden holds it open risks losing writes or corrupting it.
+
+Backups need no such care. `make_backup` uses the SQLite online backup API
+(`sqlite3 .backup`) precisely so it can snapshot a live database while writes
+are in progress, and it makes no Docker calls at all. Scheduled backups are
+completely unaffected by the socket change.
 
 ### Operating system updates
 
