@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily check for a staged Container-Optimized OS update
+
+[Timer]
+# Reboot window, in the host timezone (UTC unless you have changed it).
+# Check the host timezone with: timedatectl
+OnCalendar=*-*-* 06:00:00
+# Run on next boot if the machine was down at the scheduled time. Harmless
+# here: if nothing is staged the unit exits without rebooting.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
