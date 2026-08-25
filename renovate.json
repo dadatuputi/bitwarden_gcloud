@@ -1,0 +1,39 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommitsDisabled"
+  ],
+  "timezone": "Etc/UTC",
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 5,
+  "docker-compose": {
+    "enabled": true
+  },
+  "docker": {
+    "pinDigests": true
+  },
+  "packageRules": [
+    {
+      "description": "Group the images this stack builds and publishes itself.",
+      "matchPackageNames": [
+        "ghcr.io/dadatuputi/bwgc_caddy",
+        "ghcr.io/dadatuputi/bwgc_backup",
+        "ghcr.io/dadatuputi/bwgc_countryblock"
+      ],
+      "groupName": "bwgc images"
+    },
+    {
+      "description": "Vaultwarden holds the vault data. Keep it on its own PR so it is never merged as part of a batch.",
+      "matchPackageNames": ["vaultwarden/server"],
+      "groupName": null,
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Pin GitHub Actions to commit SHAs rather than moving tags.",
+      "matchManagers": ["github-actions"],
+      "pinDigests": true
+    }
+  ]
+}
