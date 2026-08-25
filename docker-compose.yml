@@ -154,7 +154,6 @@ services:
     volumes:
     - ${PWD}/fail2ban:/data
     - ${PWD}/bitwarden:/bitwarden:ro
-    - /var/log:/var/log:ro
     - /run/systemd/journal:/run/systemd/journal:ro 
     network_mode: "host"
     cap_add:
