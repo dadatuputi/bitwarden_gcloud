@@ -194,6 +194,9 @@ services:
     image: nickfedor/watchtower
     restart: always
     container_name: watchtower
+    # Opt-in: this service only starts with `docker-compose --profile watchtower up -d`.
+    # See the security note in README.md before enabling.
+    profiles: ["watchtower"]
     <<: *default-logging
     depends_on:
     - bitwarden
