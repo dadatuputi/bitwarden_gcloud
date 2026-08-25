@@ -15,6 +15,8 @@ services:
     image: vaultwarden/server:latest-alpine
     restart: always
     container_name: bitwarden
+    mem_limit: 320m
+    pids_limit: 200
     depends_on:
     - proxy
     <<: *default-logging
@@ -49,6 +51,8 @@ services:
     image: ghcr.io/dadatuputi/bwgc_backup:master                # from https://github.com/dadatuputi/bwgc_backup
     restart: on-failure
     container_name: backup
+    mem_limit: 192m
+    pids_limit: 100
     depends_on:
     - bitwarden
     <<: *default-logging
@@ -86,6 +90,8 @@ services:
     image: ghcr.io/dadatuputi/bwgc_caddy:master         # from https://github.com/dadatuputi/bwgc_proxy
     restart: always
     container_name: proxy
+    mem_limit: 128m
+    pids_limit: 100
     <<: *default-logging
     volumes:
     - ${PWD}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
@@ -108,6 +114,8 @@ services:
     image: linuxserver/ddclient
     restart: always
     container_name: ddns
+    mem_limit: 64m
+    pids_limit: 50
     <<: *default-logging
     depends_on:
     - bitwarden
@@ -148,6 +156,8 @@ services:
     image: crazymax/fail2ban:latest
     restart: always
     container_name: fail2ban
+    mem_limit: 128m
+    pids_limit: 100
     <<: *default-logging
     depends_on:
     - bitwarden
@@ -174,6 +184,8 @@ services:
     image: ghcr.io/dadatuputi/bwgc_countryblock:master  # from https://github.com/dadatuputi/bwgc_countryblock
     restart: always
     container_name: countryblock
+    mem_limit: 128m
+    pids_limit: 100
     <<: *default-logging
     depends_on:
     - bitwarden
@@ -194,6 +206,8 @@ services:
     image: nickfedor/watchtower
     restart: always
     container_name: watchtower
+    mem_limit: 96m
+    pids_limit: 100
     # Opt-in: this service only starts with `docker-compose --profile watchtower up -d`.
     # See the security note in README.md before enabling.
     profiles: ["watchtower"]
