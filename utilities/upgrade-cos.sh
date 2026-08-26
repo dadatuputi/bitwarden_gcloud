@@ -22,6 +22,7 @@ ZONE=
 IMAGE_FAMILY=
 ASSUME_YES=0
 KEEP_OLD=0
+DELETE_FIRST=0
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/lib-bwgc-cloudinit.sh"
@@ -39,11 +40,16 @@ Usage: $0 --instance NAME --zone ZONE [options]
   --boot-size SIZE     new boot disk size (default: $BOOT_SIZE)
   --reboot-time HH:MM  update reboot window (default: $REBOOT_TIME)
   --keep-old           leave the old instance stopped instead of deleting it
+  --delete-first       destroy the old instance BEFORE building the new one, so
+                       the two never coexist. Needed only if your disks are
+                       large enough that overlap would exceed 30 GB. Trades a
+                       capacity-failure window for guaranteed zero overage.
   --yes                do not prompt
 
-Free tier: old boot + new boot + data must stay within 30 GB of pd-standard.
-At 10 GB each that is exactly 30 GB. Larger boot disks will bill while both
-instances exist.
+Free tier: 30 GB of pd-standard. At 10 GB boot + 10 GB data, steady state is
+20 GB and the brief overlap during an upgrade is 30 GB -- at the allowance, not
+over it, so overlap is free. Larger disks (15+15) exceed 30 GB while both exist
+and need --delete-first.
 EOF
 }
 
@@ -58,6 +64,7 @@ while [ $# -gt 0 ]; do
 	--boot-size) BOOT_SIZE="$2"; shift 2 ;;
 	--reboot-time) REBOOT_TIME="$2"; shift 2 ;;
 	--keep-old) KEEP_OLD=1; shift ;;
+	--delete-first) DELETE_FIRST=1; shift ;;
 	--yes) ASSUME_YES=1; shift ;;
 	-h|--help) usage; exit 0 ;;
 	*) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -141,6 +148,24 @@ gcloud compute instances stop "$INSTANCE" --zone "$ZONE"
 gcloud compute instances detach-disk "$INSTANCE" --disk "$DISK_NAME" --zone "$ZONE"
 echo "data disk detached and safe"
 
+if [ "$DELETE_FIRST" -eq 1 ]; then
+	say "Destroying the old instance before building the replacement"
+	cat <<EOF
+  --delete-first: $INSTANCE and its boot disk are about to be deleted.
+
+  From that moment until the new instance is serving there is no running vault.
+  Your data is not at risk -- it is on $DISK_NAME, which is already detached,
+  and a verified backup is in $LOCAL_BACKUP_DIR. What is at risk is uptime, if
+  instance creation fails (zone capacity for e2-micro is the realistic cause).
+
+  Recovery in that case is to re-run this script, or create any instance and
+  attach $DISK_NAME. There is deliberately no path back to the old milestone.
+EOF
+	confirm "Delete $INSTANCE now, before the replacement exists?"
+	gcloud compute instances delete "$INSTANCE" --zone "$ZONE" --quiet
+	echo "old instance and boot disk deleted. Nothing to fall back to by design."
+fi
+
 say "Step 3/6: create the replacement with the disk attached from first boot"
 CC=$(mktemp)
 emit_cloud_config "$DISK_NAME" "$MOUNT" "$REBOOT_TIME" > "$CC"
@@ -161,7 +186,21 @@ while [ $i -lt 30 ]; do
 	if on_vm "$NEW_INSTANCE" 'true' >/dev/null 2>&1; then break; fi
 	i=$((i + 1))
 done
-on_vm "$NEW_INSTANCE" "true" >/dev/null 2>&1 || { echo "new instance never became reachable" >&2; exit 1; }
+if ! on_vm "$NEW_INSTANCE" "true" >/dev/null 2>&1; then
+	cat >&2 <<EOF
+
+FAILED: $NEW_INSTANCE never became reachable.
+
+Your vault data is intact on $DISK_NAME, and a verified backup is in
+$LOCAL_BACKUP_DIR. Nothing has been lost.
+
+Do NOT treat restarting the old instance as the fix if it still exists. It runs
+a milestone that is out of support and receives no security patches; going back
+to it is a regression, not a recovery. Diagnose why creation or boot failed --
+zone capacity for e2-micro is the usual cause -- and re-run this script.
+EOF
+	exit 1
+fi
 
 say "Step 5/6: bring the vault up on the new milestone"
 on_vm "$NEW_INSTANCE" "set -e; \
@@ -189,7 +228,10 @@ cat <<EOF
   the old boot disk goes away.
 EOF
 
-if [ "$KEEP_OLD" -eq 1 ]; then
+if [ "$DELETE_FIRST" -eq 1 ]; then
+	echo
+	echo "The old instance was already deleted before the rebuild. Nothing to clean up."
+elif [ "$KEEP_OLD" -eq 1 ]; then
 	echo
 	echo "--keep-old given: leaving $INSTANCE stopped."
 	echo "It occupies free tier disk allowance until you delete it:"
