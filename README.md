@@ -205,7 +205,7 @@ existing SMTP settings when either is wrong:
 
 ```
 $ docker exec backup ash /backup.sh check
-INFO: Newest backup is within 8 days: bw_backup_2026-08-26-011618.tar.gz.aes256
+INFO: Newest backup is within 8 days: bw_backup_YYYY-MM-DD-HHMMSS.tar.gz.aes256
 Container-Optimized OS milestone 109 is no longer supported.
 ...
 A newer LTS milestone is available: cos-129-lts (currently on 109).

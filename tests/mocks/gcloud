@@ -29,7 +29,7 @@ case "$1 $2" in
 	case "$CMD" in
 	*"os-release"*)      printf '%s\n' "$MOCK_CURRENT_MILESTONE" ;;
 	*"pwd"*)             printf '/home/tester/bitwarden_gcloud\n' ;;
-	*"backups/*.aes256"*) printf '/mnt/disks/bwgc/bitwarden_gcloud/bitwarden/backups/bw_backup_2026-08-26-000000.tar.gz.aes256\n' ;;
+	*"backups/*.aes256"*) printf '/mnt/disks/bwgc/bitwarden_gcloud/bitwarden/backups/bw_backup_1970-01-01-000000.tar.gz.aes256\n' ;;
 	*"DOMAIN="*)         printf 'vault.example.test\n' ;;
 	*"backup.sh"*)       printf 'INFO: Backup to local completed\nINFO: Backup to rclone completed\n' ;;
 	*"BACKUP_VERIFIED"*|*"db.sqlite3"*) printf 'BACKUP_VERIFIED\n' ;;
