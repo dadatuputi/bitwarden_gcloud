@@ -1,0 +1,170 @@
+#!/usr/bin/env sh
+#
+# Move a bitwarden_gcloud deployment to a newer Container-Optimized OS
+# milestone by building a new instance and reattaching the vault data disk.
+#
+# Requires that utilities/migrate-to-data-disk.sh has already been run, so the
+# vault lives on its own disk rather than on the boot disk.
+#
+# Run from Cloud Shell, or anywhere with gcloud authenticated.
+#
+# The old instance is stopped, never deleted. Rollback is starting it again.
+
+set -eu
+
+DISK_NAME=bwgc-data
+MOUNT=/mnt/disks/bwgc
+BOOT_SIZE=10GB
+REBOOT_TIME=06:00
+INSTANCE=
+NEW_INSTANCE=
+ZONE=
+IMAGE_FAMILY=
+ASSUME_YES=0
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/lib-bwgc-cloudinit.sh"
+
+usage() {
+	cat <<EOF
+Usage: $0 --instance NAME --zone ZONE [options]
+
+  --instance NAME      the current instance (required)
+  --zone ZONE          its zone (required)
+  --new-instance NAME  name for the replacement (default: NAME-<milestone>)
+  --image-family FAM   COS family (default: newest cos-*-lts published)
+  --disk-name NAME     the vault data disk (default: $DISK_NAME)
+  --mount PATH         where it mounts (default: $MOUNT)
+  --boot-size SIZE     new boot disk size (default: $BOOT_SIZE)
+  --reboot-time HH:MM  update reboot window (default: $REBOOT_TIME)
+  --yes                do not prompt
+
+Free tier: old boot + new boot + data must stay within 30 GB of pd-standard.
+At 10 GB each that is exactly 30 GB. Larger boot disks will bill while both
+instances exist.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--instance) INSTANCE="$2"; shift 2 ;;
+	--new-instance) NEW_INSTANCE="$2"; shift 2 ;;
+	--zone) ZONE="$2"; shift 2 ;;
+	--image-family) IMAGE_FAMILY="$2"; shift 2 ;;
+	--disk-name) DISK_NAME="$2"; shift 2 ;;
+	--mount) MOUNT="$2"; shift 2 ;;
+	--boot-size) BOOT_SIZE="$2"; shift 2 ;;
+	--reboot-time) REBOOT_TIME="$2"; shift 2 ;;
+	--yes) ASSUME_YES=1; shift ;;
+	-h|--help) usage; exit 0 ;;
+	*) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
+	esac
+done
+
+[ -n "$INSTANCE" ] && [ -n "$ZONE" ] || { usage >&2; exit 2; }
+command -v gcloud >/dev/null 2>&1 || { echo "gcloud not found. Run this from Cloud Shell." >&2; exit 1; }
+
+say() { printf '\n=== %s\n' "$1"; }
+on_vm() { gcloud compute ssh "$1" --zone "$ZONE" --command "$2"; }
+confirm() {
+	[ "$ASSUME_YES" -eq 1 ] && return 0
+	printf '%s [y/N] ' "$1"
+	read -r reply
+	case "$reply" in y|Y|yes|YES) return 0 ;; *) echo "aborted."; exit 1 ;; esac
+}
+
+say "Resolving the target milestone"
+if [ -z "$IMAGE_FAMILY" ]; then
+	IMAGE_FAMILY=$(gcloud compute images list --project cos-cloud \
+		--filter="family~'^cos-[0-9]+-lts$'" --format="value(family)" \
+		| sort -t- -k2 -n | tail -1)
+	[ -n "$IMAGE_FAMILY" ] || { echo "could not resolve a cos-*-lts family" >&2; exit 1; }
+fi
+MILESTONE=$(printf '%s' "$IMAGE_FAMILY" | sed 's/^cos-//; s/-lts$//')
+[ -n "$NEW_INSTANCE" ] || NEW_INSTANCE="${INSTANCE}-${MILESTONE}"
+
+CURRENT=$(on_vm "$INSTANCE" 'grep -h ^VERSION= /etc/os-release | cut -d= -f2' 2>/dev/null | tr -d '\r' || echo unknown)
+
+say "Plan"
+cat <<EOF
+  from        $INSTANCE   (COS milestone $CURRENT)
+  to          $NEW_INSTANCE  ($IMAGE_FAMILY, ${BOOT_SIZE} pd-standard)
+  data disk   $DISK_NAME  ->  $MOUNT
+  zone        $ZONE
+
+  The old instance is stopped, not deleted. Rollback is starting it again.
+EOF
+[ "$CURRENT" = "$MILESTONE" ] && echo "  NOTE: already on milestone $MILESTONE."
+confirm "Proceed?"
+
+say "Step 1/6: back up and verify before touching anything"
+on_vm "$INSTANCE" "cd $MOUNT/bitwarden_gcloud && docker exec backup ash /backup.sh local,rclone"
+on_vm "$INSTANCE" "set -e; cd $MOUNT/bitwarden_gcloud; \
+  LATEST=\$(ls -t bitwarden/backups/*.aes256 2>/dev/null | head -1); \
+  [ -n \"\$LATEST\" ] || { echo 'no backup produced' >&2; exit 1; }; \
+  docker exec backup sh -c \"openssl enc -d -aes256 -salt -pbkdf2 \
+    -pass pass:\\\"\\\$BACKUP_ENCRYPTION_KEY\\\" -in /data/backups/\$(basename \$LATEST) \
+    | tar tzf - | grep -qx db.sqlite3\" \
+  && echo 'BACKUP_VERIFIED'"
+
+say "Step 2/6: stop the stack and release the data disk"
+on_vm "$INSTANCE" "cd $MOUNT/bitwarden_gcloud && docker-compose down && sudo umount $MOUNT && echo UNMOUNTED"
+gcloud compute instances stop "$INSTANCE" --zone "$ZONE"
+gcloud compute instances detach-disk "$INSTANCE" --disk "$DISK_NAME" --zone "$ZONE"
+echo "data disk detached and safe"
+
+say "Step 3/6: create the replacement with the disk attached from first boot"
+CC=$(mktemp)
+emit_cloud_config "$DISK_NAME" "$MOUNT" "$REBOOT_TIME" > "$CC"
+gcloud compute instances create "$NEW_INSTANCE" \
+	--zone "$ZONE" \
+	--machine-type e2-micro \
+	--image-family "$IMAGE_FAMILY" \
+	--image-project cos-cloud \
+	--boot-disk-size "$BOOT_SIZE" \
+	--boot-disk-type pd-standard \
+	--disk "name=$DISK_NAME,device-name=$DISK_NAME,mode=rw,boot=no" \
+	--metadata-from-file user-data="$CC"
+
+say "Step 4/6: waiting for the new instance"
+i=0
+while [ $i -lt 30 ]; do
+	sleep 10
+	if on_vm "$NEW_INSTANCE" 'true' >/dev/null 2>&1; then break; fi
+	i=$((i + 1))
+done
+on_vm "$NEW_INSTANCE" "true" >/dev/null 2>&1 || { echo "new instance never became reachable" >&2; exit 1; }
+
+say "Step 5/6: bring the vault up on the new milestone"
+on_vm "$NEW_INSTANCE" "set -e; \
+  echo '--- milestone ---'; grep -E '^(VERSION|BUILD_ID)=' /etc/os-release; \
+  echo '--- docker ---'; docker --version; \
+  echo '--- data disk ---'; df -h $MOUNT; \
+  cd $MOUNT/bitwarden_gcloud && ./utilities/install-alias.sh >/dev/null 2>&1 || true"
+on_vm "$NEW_INSTANCE" "cd $MOUNT/bitwarden_gcloud && docker-compose up -d && sleep 25 && docker ps --format '{{.Names}}\t{{.Status}}'"
+
+say "Step 6/6: verify"
+DOMAIN=$(on_vm "$NEW_INSTANCE" "grep -E '^DOMAIN=' $MOUNT/bitwarden_gcloud/.env | cut -d= -f2 | tr -d '\"'" 2>/dev/null | tr -d '\r' || true)
+on_vm "$NEW_INSTANCE" "set +e; \
+  echo '--- jails ---'; docker exec fail2ban fail2ban-client status 2>&1 | tail -2; \
+  echo '--- update timer ---'; systemctl list-timers cos-update-reboot.timer --no-pager | head -3; \
+  [ -n '$DOMAIN' ] && { echo '--- vault ---'; curl -sI --max-time 20 https://$DOMAIN/api/version | head -1; \
+    curl -sI --max-time 20 https://$DOMAIN/admin | grep -i x-frame-options; }"
+
+say "Done"
+cat <<EOF
+  $NEW_INSTANCE is serving on COS milestone $MILESTONE.
+  $INSTANCE is STOPPED, not deleted. Its boot disk is your rollback.
+
+  Log in from a real client and confirm your entries and attachments before
+  going further. A vault returning 200 is not a vault with your data in it.
+
+  Rollback:
+      gcloud compute instances delete $NEW_INSTANCE --zone $ZONE --keep-disks data
+      gcloud compute instances attach-disk $INSTANCE --disk $DISK_NAME --device-name $DISK_NAME --zone $ZONE
+      gcloud compute instances start $INSTANCE --zone $ZONE
+
+  Once satisfied, reclaim the free tier allowance:
+      gcloud compute instances delete $INSTANCE --zone $ZONE
+      gcloud compute disks list --filter="-users:*"    # check for orphans
+EOF

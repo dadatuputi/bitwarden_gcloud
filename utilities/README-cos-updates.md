@@ -1,81 +1,88 @@
 # Applying Container-Optimized OS updates
 
-A systemd timer checks once a day whether `update-engine` has staged an OS
-update, and reboots the host if it has. Containers return on their own,
-because every service in `docker-compose.yml` sets `restart: always` or
-`restart: on-failure`.
+Two different problems, with two different mechanisms.
 
-## Why the previous script did not apply updates
+| | Mechanism | Covered by |
+|---|---|---|
+| Patches within your current milestone | staged update + reboot | the timer, below |
+| Moving to a newer milestone | rebuild the instance | `upgrade-cos.sh` |
 
-`reboot-on-update.sh` blocks on `update_engine_client
---block_until_reboot_is_needed` and then calls `shutdown -r`. The logic is
-sound, but nothing ever invoked it:
+A milestone that has stopped shipping builds needs the second one. The timer
+will run correctly and find nothing, indefinitely.
 
-- Container-Optimized OS ships no `cron`. `crontab` is not on the box at all.
-- No systemd unit referenced the script.
+## Nothing here can be installed onto the instance
 
-So the script only ran if someone started it by hand, in a shell that stayed
-open until an update landed. On a host observed in August 2026 the updater
-itself was healthy — `update-engine.service` active, polling roughly every 15
-minutes, reporting `ErrorCode::kNoUpdate` — while the box sat on milestone 109
-with no mechanism to reboot into anything it staged.
+On Container-Optimized OS, `/etc` is a tmpfs overlay. Files written to
+`/etc/systemd/system` work until the first reboot and then disappear. So does
+`/etc/fstab`. `/home` and `/var` persist but are mounted `noexec`, so a binary
+placed there cannot run either.
 
-The script is kept for reference and no longer uses `eval`, but it is not
-wired to anything. Prefer the timer.
+Google's documented mechanism is **cloud-init**, supplied through the
+instance's `user-data` metadata and reapplied on every boot. Everything this
+directory configures — the reboot timer and the vault data disk mount — is
+declared there.
 
-## Install
+`lib-bwgc-cloudinit.sh` generates that cloud-config. The other scripts source
+it, so there is one definition rather than several that drift.
+
+## Install the update timer
 
 ```sh
 ./utilities/install-cos-update-reboot.sh
 ```
 
-This copies `cos-update-reboot.sh` to `/var/lib/bitwarden_gcloud/`, installs
-the unit and timer into `/etc/systemd/system/`, and enables the timer. Both
-paths are on the stateful partition, which is writable on COS.
+This prints the cloud-config and the `gcloud` command to apply it. It installs
+nothing itself, for the reasons above. Run it from Cloud Shell.
 
-To change the reboot window, edit `OnCalendar` in
-`/etc/systemd/system/cos-update-reboot.timer` and run `sudo systemctl
-daemon-reload && sudo systemctl restart cos-update-reboot.timer`. The time is
-interpreted in the host timezone; check it with `timedatectl`.
-
-## Verify
+Verify after the reboot that applies it:
 
 ```sh
 systemctl list-timers cos-update-reboot.timer --no-pager
-sudo systemctl start cos-update-reboot.service   # forces one check now
+sudo systemctl start cos-update-reboot.service   # force one check
 journalctl -u cos-update-reboot.service --no-pager | tail -20
 ```
 
 With nothing staged, expect `nothing staged, not rebooting` and a clean exit.
-A real end-to-end test needs a genuine staged update, which cannot be forced
-on demand — so plan to confirm the first real reboot brings the whole stack
-back healthy.
+A real end-to-end test needs a genuinely staged update, which cannot be forced.
 
-Two things are worth checking after the first update actually applies, neither
-of which has been verified here:
+## About the old `reboot-on-update.sh`
 
-- that the unit files in `/etc/systemd/system/` survived the update, and
-- that the timer is still enabled.
+`reboot-on-update.sh` blocks on `update_engine_client
+--block_until_reboot_is_needed` and then calls `shutdown -r`.
 
-## What this does not cover
+Earlier revisions of this repository stated that nothing invoked it. That was
+wrong. On instances configured through GCE `startup-script` metadata it runs at
+every boot, and on one host inspected in August 2026 the process had been alive
+since 2025:
 
-This applies updates **within the current COS milestone only**. COS does not
-automatically move a running instance from one milestone to the next, so a box
-on milestone 109 stays on 109 no matter how reliably this timer runs. Moving to
-a newer milestone means recreating the instance from a current
-`cos-cloud/cos-stable` image with the data disk re-attached.
+```
+root 15071  update_engine_client --block_until_reboot_is_needed   (started 2025)
+```
 
-If the goal is to stay on a supported milestone rather than merely patched
-within an old one, treat instance rebuild as the primary mechanism and this
-timer as the thing that keeps you current in between.
+The mechanism works. It is still worth replacing, for reasons that are about
+control rather than correctness:
+
+- It holds a blocking process for the life of the boot, so its state is
+  invisible unless you go looking for it in `ps`.
+- The reboot window is computed once at boot, so a machine that has been up for
+  a year reboots against a stale calculation.
+- It cannot be tested without waiting for a real update.
+- `startup-script` and `user-data` are separate metadata keys, so a deployment
+  can end up with one configuring reboots and the other configuring mounts.
+
+The timer replaces it and is declared in the same cloud-config as everything
+else. `reboot-on-update.sh` keeps its `eval` fix and is retained for reference;
+`migrate-to-data-disk.sh` removes the `startup-script` key when it runs.
+
+## Limits
+
+This applies updates **within the current milestone only**. COS does not move a
+running instance across milestones, so a box on 109 stays on 109 no matter how
+reliably this timer runs. Use `upgrade-cos.sh` for that, and see the wiki page
+[Upgrading Container-Optimized OS](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Upgrading-Container-Optimized-OS).
 
 ## Removal
 
-```sh
-sudo systemctl disable --now cos-update-reboot.timer
-sudo rm /etc/systemd/system/cos-update-reboot.{timer,service}
-sudo rm -rf /var/lib/bitwarden_gcloud
-sudo systemctl daemon-reload
-```
-
-The host simply stops rebooting itself. No container or vault data is affected.
+Remove the `user-data` metadata key, or edit the cloud-config to drop the
+`write_files` and `runcmd` entries, then reboot. The host simply stops
+rebooting itself. No container or vault data is affected.
