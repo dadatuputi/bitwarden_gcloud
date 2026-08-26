@@ -162,6 +162,37 @@ Whichever you choose, confirm the new path works from a second terminal while
 your existing session is still open, and only then remove the broad rule. The
 serial console is the recovery path if that ordering goes wrong.
 
+### Vault log growth
+
+`vaultwarden` writes to `bitwarden/bitwarden.log` because the fail2ban jails read
+it. It has no log rotation, and at its default `info` level it logs a
+request/response pair for every HTTP call, so the file grows without bound. One
+deployment reached 595 MB across 5.8 million lines before anyone noticed.
+
+`LOG_LEVEL` now defaults to `warn`, which drops roughly 92% of the volume. This
+costs nothing in protection: every line the fail2ban filters match is logged at
+`ERROR`.
+
+```
+[error][ERROR] Username or password is incorrect. Try again. IP: ...
+[vaultwarden::api::admin][ERROR] Invalid admin token. IP: ...
+```
+
+Set `LOG_LEVEL=info` in `.env` when you need request logging for debugging.
+
+An existing oversized log is not truncated by this change. Clear it with the
+vault stopped, so vaultwarden reopens the file cleanly:
+
+```
+$ docker-compose stop bitwarden
+$ : > bitwarden/bitwarden.log
+$ docker-compose start bitwarden
+```
+
+This reduces growth rather than bounding it. Bounding it properly needs a
+logrotate sidecar using `copytruncate`, since vaultwarden does not reopen its
+log file on rename.
+
 ### Verifying a backup
 
 Check that an archive decrypts and contains the database rather than assuming

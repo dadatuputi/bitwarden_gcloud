@@ -24,6 +24,11 @@ services:
     - ${PWD}/bitwarden:/data
     environment:
     - LOG_FILE=/data/bitwarden.log
+    # vaultwarden has no log rotation, and at its default "info" level it writes
+    # a request/response pair for every HTTP call. Left alone this file grows
+    # without bound. Every line the fail2ban filters match is logged at ERROR,
+    # so "warn" loses no protection. Set LOG_LEVEL=info in .env when debugging.
+    - LOG_LEVEL=${LOG_LEVEL:-warn}
     - SHOW_PASSWORD_HINT=false
     - DOMAIN=https://${DOMAIN}          # DOMAIN is set in .env but doesn't have protocol prefix
     - IP_HEADER=X-Real-IP
