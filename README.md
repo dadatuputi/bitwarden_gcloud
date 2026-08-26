@@ -193,6 +193,38 @@ This reduces growth rather than bounding it. Bounding it properly needs a
 logrotate sidecar using `copytruncate`, since vaultwarden does not reopen its
 log file on rename.
 
+### Knowing when something has quietly stopped
+
+Two failures in this stack produce no signal at all. An unsupported COS
+milestone keeps running and keeps looking healthy, while receiving no security
+patches; the in-milestone update timer correctly finds nothing, forever. And a
+backup that stops running raises no error, because cron discards script output.
+
+The `backup` container checks both once a week and e-mails you through the
+existing SMTP settings when either is wrong:
+
+```
+$ docker exec backup ash /backup.sh check
+INFO: Newest backup is within 8 days: bw_backup_2026-08-26-011618.tar.gz.aes256
+Container-Optimized OS milestone 109 is no longer supported.
+...
+A newer LTS milestone is available: cos-129-lts (currently on 109).
+```
+
+Support is determined by asking whether `cos-<milestone>-lts` still resolves.
+Google withdraws the family pointer at end of support, so a 404 is the signal.
+Note that this deliberately ignores *image* deprecation, which is set on every
+individual build as a newer one supersedes it within a perfectly healthy
+family, and would report live milestones as dead.
+
+No credentials are needed: the instance's default service account already
+carries `compute.readonly`, and the metadata server is reachable from the
+container.
+
+Configure with `CHECK_SCHEDULE` and `BACKUP_MAX_AGE_DAYS` in `.env`, or set
+`CHECK_SCHEDULE=disabled` to turn it off. Repeat alerts are suppressed until
+the situation changes.
+
 ### Verifying a backup
 
 Check that an archive decrypts and contains the database rather than assuming

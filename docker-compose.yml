@@ -77,6 +77,11 @@ services:
     - BACKUP_RCLONE_CONF
     - BACKUP_RCLONE_DEST
     - BACKUP_ENV
+    # Weekly check: is this host's OS milestone still supported, and has a
+    # backup actually run recently? Both fail silently otherwise.
+    # CHECK_SCHEDULE=disabled turns it off.
+    - CHECK_SCHEDULE
+    - BACKUP_MAX_AGE_DAYS
     - SMTP_HOST
     - SMTP_FROM
     - SMTP_FROM_NAME=Bitwarden Backup (${DOMAIN})
