@@ -50,13 +50,18 @@ $ docker-compose --profile watchtower up -d
 The reviewed alternative is `renovate.json`, which raises image updates as
 pull requests against pinned digests.
 
-If you are upgrading an existing deployment and want watchtower gone, a plain
-`docker-compose up -d` leaves the running container orphaned rather than
-removing it:
+If you are upgrading an existing deployment and want watchtower gone, remove it
+explicitly:
 
 ```
-$ docker-compose up -d --remove-orphans
+$ docker-compose stop watchtower && docker-compose rm -f watchtower
 ```
+
+`--remove-orphans` does not do this. Compose v2 reads the `profiles` key and
+treats a gated service as one it knows about but was not asked to start, not as
+an orphan, so it leaves the running container alone. This was confirmed against
+Compose v2.36.1; a plain `docker-compose up -d --remove-orphans` left a running
+watchtower untouched.
 
 ### Restoring a backup
 
@@ -93,6 +98,12 @@ $ ./utilities/install-cos-update-reboot.sh
 See [utilities/README-cos-updates.md](utilities/README-cos-updates.md), which
 also explains why this does not move the host across COS milestones.
 
+Moving to a newer milestone is a rebuild rather than an update, because a
+running instance never changes milestone on its own. The wiki page
+[Upgrading Container-Optimized OS](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Upgrading-Container-Optimized-OS)
+covers that, including moving the vault onto its own persistent disk so later
+upgrades are a disk reattach rather than a data migration.
+
 ### Resource limits
 
 Every service sets `mem_limit` and `pids_limit`, sized for an e2-micro with no
@@ -101,6 +112,88 @@ raise its limit rather than removing it, and check usage with:
 
 ```
 $ docker stats --no-stream
+```
+
+### Intrusion blocking
+
+The `fail2ban` container runs two jails against the vault log, `bitwarden` and
+`bitwarden-admin`. Both read `/bitwarden/bitwarden.log`, which is mounted
+separately and read-only.
+
+Do not add a jail with `backend = systemd`. The image is Alpine-based and ships
+no python `systemd` module, so such a jail cannot initialize, and fail2ban
+aborts the whole server rather than skipping it. On one host this took the two
+working vault jails down with it, leaving the login and admin pages without
+brute-force protection for as long as the container crash-looped. The container
+reports `Restarting (255)` in that state, and the reason appears only in
+`docker logs fail2ban`.
+
+Mounting the journal socket does not help, because the missing piece is the
+python module rather than the socket. Container-Optimized OS also logs `sshd`
+to journald, so there is no file for a polling backend to read. An sshd jail is
+not achievable in this container. See the next section instead.
+
+Check which jails are actually running:
+
+```
+$ docker exec fail2ban fail2ban-client status
+$ docker exec fail2ban fail2ban-client status bitwarden
+```
+
+### SSH access
+
+A new GCE instance allows `tcp:22` from `0.0.0.0/0`. The container changes in
+this repository do not address that, and for the reasons above fail2ban cannot
+either.
+
+Two approaches, which combine:
+
+- **Identity-Aware Proxy.** Restrict `tcp:22` to `35.235.240.0/20`, IAP's
+  forwarding range, and connect with `gcloud compute ssh INSTANCE
+  --tunnel-through-iap`. Port 22 stops being reachable from the public
+  internet, access is authorised by IAM identity rather than by source address,
+  and each tunnel is recorded in Cloud Audit Logs. Because it does not depend
+  on where you connect from, it keeps working when your own address changes.
+- **Source address allowlist.** Restrict `tcp:22` to a known static address.
+  Simpler, and sufficient if that address never moves. It locks you out when it
+  does.
+
+Whichever you choose, confirm the new path works from a second terminal while
+your existing session is still open, and only then remove the broad rule. The
+serial console is the recovery path if that ordering goes wrong.
+
+### Verifying a backup
+
+Check that an archive decrypts and contains the database rather than assuming
+it does:
+
+```
+$ docker exec backup sh -c 'openssl enc -d -aes256 -salt -pbkdf2 \
+    -pass pass:"$BACKUP_ENCRYPTION_KEY" \
+    -in /data/backups/<backup-file> | tar tzf - | grep -v attachments/'
+```
+
+Expect `db.sqlite3`, the four `rsa_key.*` files, and `.env` when
+`BACKUP_ENV=true`.
+
+Run the scheduled job by hand to confirm delivery works end to end:
+
+```
+$ docker exec backup ash /backup.sh local,rclone
+```
+
+The method argument is required. Invoking `backup` with no argument creates the
+archive but attempts no delivery and reports `All backup methods failed`, which
+reads as a fault but is not one.
+
+A backup container whose script fails to parse produces no backups and no
+console error, because cron discards the output. One deployment ran eight
+months that way after a syntax error was introduced into a locally built image.
+Set `BACKUP_EMAIL_NOTIFY=true`, and check the newest timestamp in
+`bitwarden/backups/` from time to time:
+
+```
+$ ls -laht bitwarden/backups/ | head -3
 ```
 
 ## Changelog
