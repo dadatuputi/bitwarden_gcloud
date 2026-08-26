@@ -22,7 +22,7 @@ ZONE=
 IMAGE_FAMILY=
 ASSUME_YES=0
 KEEP_OLD=0
-DELETE_FIRST=0
+DELETE_FIRST=1
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/lib-bwgc-cloudinit.sh"
@@ -39,17 +39,25 @@ Usage: $0 --instance NAME --zone ZONE [options]
   --mount PATH         where it mounts (default: $MOUNT)
   --boot-size SIZE     new boot disk size (default: $BOOT_SIZE)
   --reboot-time HH:MM  update reboot window (default: $REBOOT_TIME)
-  --keep-old           leave the old instance stopped instead of deleting it
-  --delete-first       destroy the old instance BEFORE building the new one, so
-                       the two never coexist. Needed only if your disks are
-                       large enough that overlap would exceed 30 GB. Trades a
-                       capacity-failure window for guaranteed zero overage.
+  --keep-old           leave the old instance stopped and never delete it.
+                       Implies --overlap. Costs free tier allowance until you
+                       remove it by hand.
+  --delete-first       destroy the old instance before building the new one so
+                       the two never coexist. THIS IS THE DEFAULT.
+  --overlap            keep the old instance until the new one verifies. Only
+                       possible when boot+boot+data fits in 30 GB, i.e. a data
+                       disk of 10 GB or less.
   --yes                do not prompt
 
-Free tier: 30 GB of pd-standard. At 10 GB boot + 10 GB data, steady state is
-20 GB and the brief overlap during an upgrade is 30 GB -- at the allowance, not
-over it, so overlap is free. Larger disks (15+15) exceed 30 GB while both exist
-and need --delete-first.
+Free tier: 30 GB of pd-standard, and the boot disk holds nothing unique -- the
+OS is read-only and Docker images re-pull for free. Deleting it first means only
+one boot disk ever exists, so the data disk gets the rest:
+
+    delete-first (default)   10 GB boot + up to 20 GB data
+    --overlap                10 GB boot + up to 10 GB data
+
+Vaults with many file attachments want the 20 GB. Attachments are the only part
+of a vault that grows without bound.
 EOF
 }
 
@@ -63,8 +71,9 @@ while [ $# -gt 0 ]; do
 	--mount) MOUNT="$2"; shift 2 ;;
 	--boot-size) BOOT_SIZE="$2"; shift 2 ;;
 	--reboot-time) REBOOT_TIME="$2"; shift 2 ;;
-	--keep-old) KEEP_OLD=1; shift ;;
+	--keep-old) KEEP_OLD=1; DELETE_FIRST=0; shift ;;
 	--delete-first) DELETE_FIRST=1; shift ;;
+	--overlap) DELETE_FIRST=0; shift ;;
 	--yes) ASSUME_YES=1; shift ;;
 	-h|--help) usage; exit 0 ;;
 	*) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -180,9 +189,12 @@ gcloud compute instances create "$NEW_INSTANCE" \
 	--metadata-from-file user-data="$CC"
 
 say "Step 4/6: waiting for the new instance"
+# Tunable so the test harness does not wait five minutes for a mocked host.
+WAIT_TRIES="${BWGC_WAIT_TRIES:-30}"
+WAIT_SLEEP="${BWGC_WAIT_SLEEP:-10}"
 i=0
-while [ $i -lt 30 ]; do
-	sleep 10
+while [ $i -lt "$WAIT_TRIES" ]; do
+	[ "$WAIT_SLEEP" -gt 0 ] && sleep "$WAIT_SLEEP"
 	if on_vm "$NEW_INSTANCE" 'true' >/dev/null 2>&1; then break; fi
 	i=$((i + 1))
 done

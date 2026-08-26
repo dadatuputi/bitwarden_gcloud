@@ -13,7 +13,7 @@
 set -eu
 
 DISK_NAME=bwgc-data
-DISK_SIZE=10GB
+DISK_SIZE=20GB
 MOUNT=/mnt/disks/bwgc
 REBOOT_TIME=06:00
 INSTANCE=
@@ -32,14 +32,18 @@ Usage: $0 --instance NAME --zone ZONE [options]
   --zone ZONE         its zone, e.g. us-central1-a (required)
   --disk-name NAME    data disk to create (default: $DISK_NAME)
   --disk-size SIZE    size, minimum 10GB on pd-standard (default: $DISK_SIZE)
+                      20GB suits vaults with file attachments. Upgrades delete
+                      the old boot disk before creating the new one, so only
+                      one boot disk exists at a time and 10+20 stays at the
+                      30 GB free allowance.
   --mount PATH        where to mount it (default: $MOUNT)
   --reboot-time HH:MM daily window for OS update reboots (default: $REBOOT_TIME)
   --print-cloud-config  print the generated cloud-config and exit
   --yes               do not prompt for confirmation
 
-Free tier note: pd-standard only, and 30 GB total across all disks. A 10 GB
-boot disk plus a 10 GB data disk leaves room for a second boot disk during an
-upgrade, which is exactly 30 GB. Anything larger will bill.
+Free tier note: pd-standard only, 30 GB total. A 10 GB boot disk plus a 20 GB
+data disk is exactly 30 GB. upgrade-cos.sh deletes the old boot disk before
+creating its replacement, so a second boot disk never coexists with the first.
 EOF
 }
 
@@ -162,9 +166,12 @@ say "Step 6/6: reboot and verify the mount returns"
 confirm "Reboot $INSTANCE now to prove the mount survives?"
 gcloud compute instances reset "$INSTANCE" --zone "$ZONE"
 echo "waiting for the instance to come back..."
+# Tunable so the test harness does not wait five minutes for a mocked host.
+WAIT_TRIES="${BWGC_WAIT_TRIES:-30}"
+WAIT_SLEEP="${BWGC_WAIT_SLEEP:-10}"
 i=0
-while [ $i -lt 30 ]; do
-	sleep 10
+while [ $i -lt "$WAIT_TRIES" ]; do
+	[ "$WAIT_SLEEP" -gt 0 ] && sleep "$WAIT_SLEEP"
 	if on_vm 'true' >/dev/null 2>&1; then break; fi
 	i=$((i + 1))
 done
