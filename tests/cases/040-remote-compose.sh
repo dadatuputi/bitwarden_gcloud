@@ -23,7 +23,7 @@ for script in "$ROOT/utilities/migrate-to-data-disk.sh" "$ROOT/utilities/upgrade
 		/^on_vm |^if ! on_vm / { blk=$0; inblk=1; if ($0 !~ /\\$/) { check(); inblk=0 } ; next }
 		inblk { blk=blk "\n" $0; if ($0 !~ /\\$/) { check(); inblk=0 } }
 		function check() {
-			if (blk ~ /[^-]compose / && blk !~ /COMPOSE_SRC/) { print substr(blk,1,60) }
+			if (blk ~ /[^-]compose / && blk !~ /COMPOSE_SRC/ && blk !~ /bwgc-compose\.sh/) { print substr(blk,1,60) }
 		}
 	' "$script")
 	if [ -z "$missing" ]; then
@@ -93,13 +93,16 @@ assert_contains "$mig" "gcloud compute scp" "downloads the backup before removin
 # The backup must reach the operator's machine before anything destructive
 # happens. Between the backup and the end of the run the script stops
 # containers, formats a disk and reboots the instance.
-scp_line=$(grep -n 'gcloud compute scp' "$ROOT/utilities/migrate-to-data-disk.sh" | head -1 | cut -d: -f1)
-for danger in 'compose down' 'mkfs.ext4' 'instances reset' 'rm -rf ~/bitwarden_gcloud'; do
-	d_line=$(grep -nF "$danger" "$ROOT/utilities/migrate-to-data-disk.sh" | head -1 | cut -d: -f1)
-	if [ -n "$d_line" ] && [ "$scp_line" -lt "$d_line" ]; then
+# Compare positions in the executable body only. The guard printed before
+# Step 1 quotes some of these commands as advice, which is prose, not action.
+body=$(sed -n '/^say "Step 1\//,$p' "$ROOT/utilities/migrate-to-data-disk.sh")
+scp_line=$(printf '%s\n' "$body" | grep -n 'gcloud compute scp' | head -1 | cut -d: -f1)
+for danger in 'compose down' 'mkfs' 'instances reset' 'rm -rf ~/bitwarden_gcloud'; do
+	d_line=$(printf '%s\n' "$body" | grep -nF "$danger" | head -1 | cut -d: -f1)
+	if [ -n "$scp_line" ] && [ -n "$d_line" ] && [ "$scp_line" -lt "$d_line" ]; then
 		pass "backup is downloaded before: $danger"
 	else
-		fail "backup is downloaded before: $danger" "scp at $scp_line, $danger at ${d_line:-none}"
+		fail "backup is downloaded before: $danger" "scp at ${scp_line:-none}, $danger at ${d_line:-none}"
 	fi
 done
 
@@ -110,4 +113,19 @@ if [ -n "$up_scp" ] && [ -n "$up_del" ] && [ "$up_scp" -lt "$up_del" ]; then
 	pass "upgrade downloads the backup before deleting the instance"
 else
 	fail "upgrade downloads the backup before deleting the instance" "scp=$up_scp delete=$up_del"
+fi
+
+# Re-running after a successful migration would back up and copy from the stale
+# ~/bitwarden_gcloud while the containers read from the data disk. It has to
+# refuse rather than produce a confusing half-run.
+assert_contains "$mig" "STOPPING: \$MOUNT is already mounted" "refuses to re-run against a migrated host"
+assert_contains "$mig" "stale pre-migration copy"             "explains why re-running is wrong"
+
+# The log-clear step must not swallow its own failures. A blanket "|| true"
+# there hid a syntax error in that same command through two releases.
+logclear=$(printf '%s' "$mig" | grep -A9 'no vault log to clear' || true)
+if printf '%s' "$logclear" | grep -q '|| true'; then
+	fail "log-clear step does not blanket-suppress failures" "found '|| true' in the block"
+else
+	pass "log-clear step does not blanket-suppress failures"
 fi

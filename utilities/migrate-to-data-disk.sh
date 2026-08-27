@@ -138,6 +138,29 @@ confirm "Proceed?"
 
 install_compose_helper
 
+ALREADY=$(on_vm "if mountpoint -q $MOUNT && [ -d $MOUNT/bitwarden_gcloud ]; then echo yes; fi" | tr -d '\r')
+if [ "$ALREADY" = yes ]; then
+	cat >&2 <<EOF
+
+STOPPING: $MOUNT is already mounted and holds a deployment.
+
+This host has been migrated. Running this script again would back up and copy
+from ~/bitwarden_gcloud, which is the stale pre-migration copy -- the running
+containers read from $MOUNT.
+
+If the migration finished, there is nothing to do. If you want to retire the old
+copy and create the symlink, do that directly:
+
+    gcloud compute ssh $INSTANCE --zone $ZONE --command \\
+      'rm -rf ~/bitwarden_gcloud && ln -s $MOUNT/bitwarden_gcloud ~/bitwarden_gcloud'
+
+To upgrade the OS milestone instead:
+
+    ./upgrade-cos.sh --instance $INSTANCE --zone $ZONE
+EOF
+	exit 1
+fi
+
 say "Step 1/7: reclaim space before copying"
 on_vm 'cd ~/bitwarden_gcloud \
   && echo "--- before ---" && docker system df \
@@ -146,14 +169,20 @@ on_vm 'cd ~/bitwarden_gcloud \
   echo "--- after ---"; docker system df; \
   echo "--- restoring the docker:cli image the prune removed ---"; \
   docker pull -q docker:cli >/dev/null 2>&1 || true'
-on_vm "$COMPOSE_SRC cd ~/bitwarden_gcloud \
-  && if [ -s bitwarden/bitwarden.log ]; then \
-       ls -lh bitwarden/bitwarden.log; \
-       compose stop bitwarden >/dev/null 2>&1 || true; \
-       : > bitwarden/bitwarden.log; \
-       compose start bitwarden >/dev/null 2>&1 || true; \
-       echo "vault log cleared"; \
-     else echo 'vault log already small'; fi" || true
+# Single-quoted: the inner double quotes broke this when the whole command was
+# double-quoted for a variable that no longer needs expanding.
+#
+# No blanket "|| true" either. It was there so an already-small log would not
+# abort the run, but it also swallowed a syntax error in this very command --
+# twice. The only tolerated failure is the log being absent.
+on_vm '. ~/.bwgc-compose.sh; set -e; cd ~/bitwarden_gcloud; \
+  if [ ! -f bitwarden/bitwarden.log ]; then echo "no vault log to clear"; exit 0; fi; \
+  if [ ! -s bitwarden/bitwarden.log ]; then echo "vault log already empty"; exit 0; fi; \
+  ls -lh bitwarden/bitwarden.log; \
+  compose stop bitwarden >/dev/null; \
+  : > bitwarden/bitwarden.log; \
+  compose start bitwarden >/dev/null; \
+  echo "vault log cleared"'
 
 say "Step 2/7: back up and verify"
 on_vm 'docker exec backup ash /backup.sh local,rclone'
