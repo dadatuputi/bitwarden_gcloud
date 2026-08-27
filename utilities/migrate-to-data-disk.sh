@@ -193,6 +193,30 @@ Nothing has been changed.
 EOF
 	exit 1
 fi
+# The rollback both wiki pages describe restores .env from inside the archive,
+# and backup.sh only puts it there when BACKUP_ENV is true. It ships false, so
+# without this the archive is a database with no configuration behind it.
+if ! on_vm 'grep -qE "^BACKUP_ENV=true" ~/bitwarden_gcloud/.env' >/dev/null 2>&1; then
+	cat >&2 <<EOF
+
+BACKUP_ENV is not true in ~/bitwarden_gcloud/.env.
+
+The backup this script takes is your restore point, and .env is only included
+when BACKUP_ENV=true. Without it the archive holds the vault database but not
+the settings the stack needs to start, and a restore leaves the proxy unable to
+come up because EMAIL is empty.
+
+The archive is encrypted with BACKUP_ENCRYPTION_KEY, so .env is not exposed by
+turning this on. Set it, bring the stack up, and run this script again:
+
+    cd ~/bitwarden_gcloud
+    sed -i 's/^BACKUP_ENV=.*/BACKUP_ENV=true/' .env || echo 'BACKUP_ENV=true' >> .env
+    docker-compose up -d
+
+Nothing has been changed.
+EOF
+	exit 1
+fi
 if ! on_vm 'grep -qE "^BACKUP_ENCRYPTION_KEY=." ~/bitwarden_gcloud/.env' >/dev/null 2>&1; then
 	cat >&2 <<EOF
 

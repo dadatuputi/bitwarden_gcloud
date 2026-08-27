@@ -185,3 +185,24 @@ if printf '%s' "$mig" | grep -q ') /api/version'; then
 else
 	pass "the printed curl has no stray space before the path"
 fi
+
+# Iteration 6: both wiki pages state that .env comes back from inside the backup
+# archive. backup.sh only includes it when BACKUP_ENV=true, which ships false, so
+# the archive was a database with no configuration behind it.
+assert_contains "$mig" "BACKUP_ENV is not true"  "the migration requires a complete restore point"
+assert_contains "$upg" "BACKUP_ENV is not true"  "the upgrade requires a complete restore point"
+assert_contains "$(cat "$ROOT/.env.template")" "BACKUP_ENV=true" "the template ships a complete restore point"
+if grep -qE '^BACKUP_ENV=false' "$ROOT/.env.template"; then
+	fail "the template does not ship BACKUP_ENV=false"
+else
+	pass "the template does not ship BACKUP_ENV=false"
+fi
+
+# Delete-first is the default, so the closing summary must not describe an
+# instance that no longer exists.
+assert_contains "$upg" "were deleted before the rebuild" "the summary matches delete-first"
+if printf '%s' "$upg" | grep -q 'DELETE_FIRST" -eq 1 ]; then'; then
+	pass "the summary branches on the mode actually used"
+else
+	fail "the summary branches on the mode actually used"
+fi

@@ -256,6 +256,26 @@ confirm "Proceed?"
 
 install_compose_helper "$INSTANCE"
 
+# .env is only in the archive when BACKUP_ENV is true, and the rollback this
+# page documents restores it from there.
+if ! on_vm "$INSTANCE" 'grep -qE "^BACKUP_ENV=true" '"$MOUNT"'/bitwarden_gcloud/.env' >/dev/null 2>&1; then
+	cat >&2 <<EOF
+
+BACKUP_ENV is not true in $MOUNT/bitwarden_gcloud/.env.
+
+The backup taken next is the rollback for this upgrade, and .env is only
+included when BACKUP_ENV=true. Without it the archive holds the vault database
+but not the settings the stack needs to start. The archive is encrypted, so
+turning this on does not expose it.
+
+    gcloud compute ssh $INSTANCE --zone $ZONE --command \\
+      'cd $MOUNT/bitwarden_gcloud && sudo sed -i "s/^BACKUP_ENV=.*/BACKUP_ENV=true/" .env'
+
+Nothing has been changed.
+EOF
+	exit 1
+fi
+
 say "Step 1/7: back up and verify before touching anything"
 on_vm "$INSTANCE" "cd $MOUNT/bitwarden_gcloud && docker exec backup ash /backup.sh local"
 on_vm "$INSTANCE" "set -e; cd $MOUNT/bitwarden_gcloud; \
@@ -532,7 +552,19 @@ on_vm "$NEW_INSTANCE" "set +e; \
 # upgrade that otherwise succeeded, which is why that remote command ends in
 # "true".
 say "Step 7/7: complete the swap"
-cat <<EOF
+# Delete-first is the default, in which case the old instance is already gone
+# and describing it as "stopped" sends the reader looking for something that
+# does not exist.
+if [ "$DELETE_FIRST" -eq 1 ]; then
+	cat <<EOF
+  $NEW_INSTANCE is serving on COS milestone $MILESTONE.
+  $INSTANCE and its boot disk were deleted before the rebuild. The vault lives on
+  $DISK_NAME, and a verified backup is in $LOCAL_BACKUP_DIR.
+
+  Log in from a real client and confirm your entries and attachments now.
+EOF
+else
+	cat <<EOF
   $NEW_INSTANCE is serving on COS milestone $MILESTONE.
   $INSTANCE is stopped. Its boot disk holds nothing you need: the vault lives on
   $DISK_NAME, and a verified backup is in $LOCAL_BACKUP_DIR.
@@ -540,6 +572,7 @@ cat <<EOF
   Log in from a real client and confirm your entries and attachments NOW, before
   the old boot disk goes away.
 EOF
+fi
 
 if [ "$DELETE_FIRST" -eq 1 ]; then
 	echo
