@@ -12,7 +12,8 @@
 
 set -eu
 
-DISK_NAME=bwgc-data
+DISK_NAME=
+DISK_NAME_DEFAULT=bwgc-data
 MOUNT=/mnt/disks/bwgc
 BOOT_SIZE=10GB
 MACHINE_TYPE=e2-micro
@@ -198,6 +199,43 @@ fi
 
 CURRENT=$(on_vm "$INSTANCE" 'grep -h ^VERSION= /etc/os-release | cut -d= -f2' 2>/dev/null | tr -d '\r' || echo unknown)
 
+# Read the data disk off the instance rather than assuming the default name.
+# The migration accepts --disk-name, so a user who used it arrives here with a
+# disk this script would otherwise fail to find -- after it has already stopped
+# the stack and the instance. Worse, in a project that happens to hold a disk
+# called bwgc-data in this zone, the default would have detached the wrong one
+# and the plan would have read as though that were intended.
+if [ -z "$DISK_NAME" ]; then
+	DISK_NAME=$(gcloud compute instances describe "$INSTANCE" --zone "$ZONE" \
+		--format="value(disks[].deviceName)" 2>/dev/null \
+		| tr ';' '\n' | tr '\t' '\n' | grep -v '^$' | tail -n +2 | head -1 || true)
+	if [ -n "$DISK_NAME" ]; then
+		echo "data disk read from $INSTANCE: $DISK_NAME"
+	else
+		DISK_NAME=$DISK_NAME_DEFAULT
+		echo "could not read a data disk from $INSTANCE; assuming $DISK_NAME"
+	fi
+fi
+
+# Fail before anything is stopped, not after.
+if ! gcloud compute disks describe "$DISK_NAME" --zone "$ZONE" >/dev/null 2>&1; then
+	cat >&2 <<EOF
+
+No disk named $DISK_NAME in $ZONE.
+
+This script needs the data disk the migration created. Pass it explicitly:
+
+    ./upgrade-cos.sh --instance $INSTANCE --zone $ZONE --disk-name NAME
+
+The disks attached to $INSTANCE are:
+
+$(gcloud compute instances describe "$INSTANCE" --zone "$ZONE" --format="value(disks[].deviceName)" 2>/dev/null | tr ';' '\n' | sed 's/^/    /')
+
+Nothing has been changed.
+EOF
+	exit 1
+fi
+
 say "Plan"
 cat <<EOF
   from        $INSTANCE   (COS milestone $CURRENT)
@@ -219,7 +257,7 @@ confirm "Proceed?"
 install_compose_helper "$INSTANCE"
 
 say "Step 1/6: back up and verify before touching anything"
-on_vm "$INSTANCE" "cd $MOUNT/bitwarden_gcloud && docker exec backup ash /backup.sh local,rclone"
+on_vm "$INSTANCE" "cd $MOUNT/bitwarden_gcloud && docker exec backup ash /backup.sh local"
 on_vm "$INSTANCE" "set -e; cd $MOUNT/bitwarden_gcloud; \
   LATEST=\$(ls -t bitwarden/backups/*.aes256 2>/dev/null | head -1); \
   [ -n \"\$LATEST\" ] || { echo 'no backup produced' >&2; exit 1; }; \
@@ -452,14 +490,31 @@ on_vm "$NEW_INSTANCE" "set -e; \
   cd $MOUNT/bitwarden_gcloud && ./utilities/install-alias.sh; \
   ln -sfn $MOUNT/bitwarden_gcloud ~/bitwarden_gcloud; \
   ls -ld ~/bitwarden_gcloud"
-install_compose_helper "$NEW_INSTANCE"
-on_vm "$NEW_INSTANCE" "$COMPOSE_SRC set -e; \
-  if [ \"\$(systemctl is-active bwgc.service 2>/dev/null)\" = active ]; then \
-    echo 'stack started by bwgc.service'; \
-  else \
-    cd $MOUNT/bitwarden_gcloud && compose up -d; \
-  fi; \
-  sleep 25; docker ps --format '{{.Names}}\t{{.Status}}'"
+  # bwgc.service owns starting the stack. This script must not also run compose:
+  # an "is it active yet" check is a point-in-time sample, and on a real run both
+  # sides created a network called bitwarden_gcloud_default one millisecond
+  # apart, after which every container start failed with "network ... is
+  # ambiguous (2 matches found on name)". Wait for the unit instead.
+  printf 'waiting for bwgc.service to start the stack'
+  k=0
+  STACK_STATE=
+  while [ $k -lt "${BWGC_STACK_TRIES:-30}" ]; do
+  	STACK_STATE=$(on_vm "$NEW_INSTANCE" 'systemctl is-active bwgc.service 2>/dev/null' 2>/dev/null | tr -d '\r')
+  	case "$STACK_STATE" in
+  	active) printf ' started\n'; break ;;
+  	failed) printf ' failed\n'; break ;;
+  	esac
+  	printf '.'
+  	[ "${BWGC_WAIT_SLEEP:-10}" -gt 0 ] && sleep "${BWGC_WAIT_SLEEP:-10}"
+  	k=$((k + 1))
+  done
+  if [ "$STACK_STATE" != active ]; then
+  	echo "bwgc.service did not start the stack (state: ${STACK_STATE:-unknown})." >&2
+  	echo "Your vault is on $DISK_NAME. Check: gcloud compute ssh $NEW_INSTANCE --zone $ZONE --command 'sudo journalctl -u bwgc.service -b --no-pager'" >&2
+  	exit 1
+  fi
+  install_compose_helper "$NEW_INSTANCE"
+  on_vm "$NEW_INSTANCE" "docker ps --format '{{.Names}}\t{{.Status}}'"
 
 say "Step 6/6: verify"
 DOMAIN=$(on_vm "$NEW_INSTANCE" "grep -E '^DOMAIN=' $MOUNT/bitwarden_gcloud/.env | cut -d= -f2 | tr -d '\"'" 2>/dev/null | tr -d '\r' || true)
@@ -467,8 +522,13 @@ on_vm "$NEW_INSTANCE" "set +e; \
   echo '--- jails ---'; docker exec fail2ban fail2ban-client status 2>&1 | tail -2; \
   echo '--- update timer ---'; systemctl list-timers cos-update-reboot.timer --no-pager | head -3; \
   [ -n '$DOMAIN' ] && { echo '--- vault ---'; curl -sI --max-time 20 https://$DOMAIN/api/version | head -1; \
-    curl -sI --max-time 20 https://$DOMAIN/admin | grep -i x-frame-options; }"
+    curl -sI --max-time 20 https://$DOMAIN/admin | grep -i x-frame-options; }; \
+    true"
 
+# The external check above is informational: DNS may not point here yet, or may
+# point through a proxy. Its result must not become the exit status of an
+# upgrade that otherwise succeeded, which is why that remote command ends in
+# "true".
 say "Step 7/7: complete the swap"
 cat <<EOF
   $NEW_INSTANCE is serving on COS milestone $MILESTONE.
