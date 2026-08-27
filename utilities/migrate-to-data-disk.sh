@@ -193,42 +193,61 @@ Nothing has been changed.
 EOF
 	exit 1
 fi
-# The rollback both wiki pages describe restores .env from inside the archive,
-# and backup.sh only puts it there when BACKUP_ENV is true. It ships false, so
-# without this the archive is a database with no configuration behind it.
-if ! on_vm 'grep -qE "^BACKUP_ENV=true" ~/bitwarden_gcloud/.env' >/dev/null 2>&1; then
+# What the backup contains and whether it is encrypted are the operator's
+# choices, not this script's. Report exactly what will be produced and carry on;
+# only a backup that cannot be taken at all stops the run.
+BACKUP_ENC=no
+BACKUP_HAS_ENV=no
+on_vm 'grep -qE "^BACKUP_ENCRYPTION_KEY=." ~/bitwarden_gcloud/.env' >/dev/null 2>&1 && BACKUP_ENC=yes
+on_vm 'grep -qE "^BACKUP_ENV=true" ~/bitwarden_gcloud/.env' >/dev/null 2>&1 && BACKUP_HAS_ENV=yes
+
+echo
+echo "The backup this script takes and downloads will be:"
+if [ "$BACKUP_ENC" = yes ]; then
+	echo "  encrypted   yes, with BACKUP_ENCRYPTION_KEY from .env"
+	echo
+	echo "  Record that key somewhere outside this instance now. The copy"
+	echo "  downloaded to this machine cannot be opened without it. To print it:"
+	echo
+	echo "      gcloud compute ssh $INSTANCE --zone $ZONE --command \\"
+	echo "        'sudo grep \"^BACKUP_ENCRYPTION_KEY=\" ~/bitwarden_gcloud/.env'"
+else
+	echo "  encrypted   NO -- BACKUP_ENCRYPTION_KEY is not set"
+	echo
+	echo "  The archive and the copy downloaded to this machine will be plain"
+	echo "  tar.gz holding your vault database. Treat both as secrets. Setting"
+	echo "  BACKUP_ENCRYPTION_KEY in .env and re-running would encrypt them."
+fi
+if [ "$BACKUP_HAS_ENV" = yes ]; then
+	echo "  includes .env   yes, so a restore brings back your settings too"
+else
+	echo "  includes .env   no (BACKUP_ENV is false)"
+	echo
+	echo "  The archive will hold the vault database but not the settings the"
+	echo "  stack needs to start. Restoring it onto a fresh deployment means"
+	echo "  writing .env by hand afterwards. BACKUP_ENV=true includes it."
+fi
+echo
+
+# Everything from Step 1 onwards changes the instance. Step 2 backs the vault up
+# through the backup container, so check it can before anything moves.
+if ! on_vm 'docker ps --format "{{.Names}}" | grep -qx backup' >/dev/null 2>&1; then
 	cat >&2 <<EOF
 
-BACKUP_ENV is not true in ~/bitwarden_gcloud/.env.
+The backup container is not running, and Step 2 takes its backup through it.
 
-The backup this script takes is your restore point, and .env is only included
-when BACKUP_ENV=true. Without it the archive holds the vault database but not
-the settings the stack needs to start, and a restore leaves the proxy unable to
-come up because EMAIL is empty.
-
-The archive is encrypted with BACKUP_ENCRYPTION_KEY, so .env is not exposed by
-turning this on. Set it, bring the stack up, and run this script again:
+BACKUP ships commented out in .env.template, so a deployment that never turned
+backups on has the container present but exited. Enable it and bring the stack
+up, then run this script again:
 
     cd ~/bitwarden_gcloud
-    sed -i 's/^BACKUP_ENV=.*/BACKUP_ENV=true/' .env || echo 'BACKUP_ENV=true' >> .env
+    grep -q '^BACKUP=' .env || echo 'BACKUP=local' >> .env
     docker-compose up -d
 
 Nothing has been changed.
 EOF
 	exit 1
 fi
-if ! on_vm 'grep -qE "^BACKUP_ENCRYPTION_KEY=." ~/bitwarden_gcloud/.env' >/dev/null 2>&1; then
-	cat >&2 <<EOF
-
-BACKUP_ENCRYPTION_KEY is not set in ~/bitwarden_gcloud/.env.
-
-Step 2 verifies the backup by decrypting it, and the copy downloaded to this
-machine is encrypted with that key. It ships commented out. Set it, bring the
-stack up, and run this script again. Nothing has been changed.
-EOF
-	exit 1
-fi
-
 # The plan is printed last, after the checks, so it never advertises work
 # this run is not going to do -- creating a disk on a host that already has
 # one, for instance -- and so a reader can see the prerequisites were

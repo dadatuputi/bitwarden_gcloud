@@ -189,14 +189,26 @@ fi
 # Iteration 6: both wiki pages state that .env comes back from inside the backup
 # archive. backup.sh only includes it when BACKUP_ENV=true, which ships false, so
 # the archive was a database with no configuration behind it.
-assert_contains "$mig" "BACKUP_ENV is not true"  "the migration requires a complete restore point"
-assert_contains "$upg" "BACKUP_ENV is not true"  "the upgrade requires a complete restore point"
-assert_contains "$(cat "$ROOT/.env.template")" "BACKUP_ENV=true" "the template ships a complete restore point"
-if grep -qE '^BACKUP_ENV=false' "$ROOT/.env.template"; then
-	fail "the template does not ship BACKUP_ENV=false"
-else
-	pass "the template does not ship BACKUP_ENV=false"
-fi
+# Whether the backup is encrypted, and whether it carries .env, are the
+# operator's choices. The scripts report which case they are in; they do not
+# refuse either. Only a backup that cannot be taken at all stops the run.
+for f in migrate-to-data-disk.sh upgrade-cos.sh; do
+	body=$(cat "$ROOT/utilities/$f")
+	assert_contains "$body" "BACKUP_ENC=" "$f: detects whether the backup is encrypted"
+	assert_contains "$body" "BACKUP_HAS_ENV=" "$f: detects whether the backup carries .env"
+	assert_contains "$body" "includes .env" "$f: says what the archive will contain"
+	assert_contains "$body" "BACKUP_ENCRYPTION_KEY" "$f: names the key so it can be recorded"
+	# Refusals in these scripts print a heredoc naming the setting and ending
+	# "Nothing has been changed." before exit 1. Reporting lines do not.
+	if printf '%s' "$body" | grep -B12 'Nothing has been changed' | grep -qE 'BACKUP_(ENV|ENCRYPTION_KEY)'; then
+		fail "$f: does not refuse over an unencrypted or config-less backup"
+	else
+		pass "$f: does not refuse over an unencrypted or config-less backup"
+	fi
+done
+# Both cases have to be described, not just the encrypted one.
+assert_contains "$mig" "encrypted   NO" "the unencrypted case is spelled out"
+assert_contains "$(cat "$ROOT/.env.template")" "Both combinations are" "the template presents this as a choice"
 
 # Delete-first is the default, so the closing summary must not describe an
 # instance that no longer exists.
