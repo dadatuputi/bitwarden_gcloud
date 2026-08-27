@@ -118,14 +118,6 @@ confirm() {
 	case "$reply" in y|Y|yes|YES) return 0 ;; *) echo "aborted."; exit 1 ;; esac
 }
 
-# Same, but proceeding is the default. Used where stopping is the unusual
-# choice and the change has already been shown in full.
-confirm_default_yes() {
-	[ "$ASSUME_YES" -eq 1 ] && return 0
-	printf '%s [Y/n] ' "$1"
-	read -r reply
-	case "$reply" in n|N|no|NO) echo "aborted."; exit 1 ;; *) return 0 ;; esac
-}
 
 REPO_DIR=$(on_vm 'cd ~/bitwarden_gcloud >/dev/null 2>&1 && pwd' || true)
 [ -n "$REPO_DIR" ] || { echo "could not find ~/bitwarden_gcloud on $INSTANCE" >&2; exit 1; }
@@ -486,7 +478,7 @@ The current value is saved to:
 
 Keep a copy elsewhere if you have hand-edited it -- that path is temporary.
 EOF
-	confirm_default_yes "Replace the user-data metadata?"
+	confirm "Replace the user-data metadata?"
 else
 	echo "No existing user-data metadata; the generated cloud-config will be set."
 	echo
@@ -634,7 +626,7 @@ so the familiar path keeps working:
     ~/bitwarden_gcloud -> $MOUNT/bitwarden_gcloud
 
 EOF
-confirm_default_yes "Remove the old copy and create the symlink?"
+confirm "Remove the old copy and create the symlink?"
 # sudo for the removal, not for the symlink: attachments, the RSA keys and
 # Caddy's certificate store are written by containers running as root, so the
 # invoking user cannot delete them. The link itself should belong to the user.
