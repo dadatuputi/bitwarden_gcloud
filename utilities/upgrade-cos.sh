@@ -89,6 +89,11 @@ done
 [ -n "$INSTANCE" ] && [ -n "$ZONE" ] || { usage >&2; exit 2; }
 command -v gcloud >/dev/null 2>&1 || { echo "gcloud not found. Run this from Cloud Shell." >&2; exit 1; }
 
+# compose on these instances is a shell alias in ~/.bash_alias, which a
+# non-interactive ssh command never sources. Every remote command that needs
+# compose carries this definition instead of relying on the caller's shell.
+COMPOSE_FN='compose() { if docker compose version >/dev/null 2>&1; then docker compose "$@"; else docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:$PWD" -w="$PWD" --entrypoint docker docker:cli compose "$@"; fi; }'
+
 say() { printf '\n=== %s\n' "$1"; }
 on_vm() { gcloud compute ssh "$1" --zone "$ZONE" --command "$2"; }
 confirm() {
@@ -194,7 +199,7 @@ else
 fi
 
 say "Step 2/6: stop the stack and release the data disk"
-on_vm "$INSTANCE" "cd $MOUNT/bitwarden_gcloud && docker-compose down && sudo umount $MOUNT && echo UNMOUNTED"
+on_vm "$INSTANCE" "$COMPOSE_FN; cd $MOUNT/bitwarden_gcloud && compose down && sudo umount $MOUNT && echo UNMOUNTED"
 gcloud compute instances stop "$INSTANCE" --zone "$ZONE"
 gcloud compute instances detach-disk "$INSTANCE" --disk "$DISK_NAME" --zone "$ZONE"
 echo "data disk detached and safe"
@@ -264,7 +269,7 @@ on_vm "$NEW_INSTANCE" "set -e; \
   echo '--- boot disk split ---'; lsblk -o NAME,SIZE,TYPE | head -4; \
   echo '--- data disk ---'; df -h $MOUNT; \
   cd $MOUNT/bitwarden_gcloud && ./utilities/install-alias.sh >/dev/null 2>&1 || true"
-on_vm "$NEW_INSTANCE" "cd $MOUNT/bitwarden_gcloud && docker-compose up -d && sleep 25 && docker ps --format '{{.Names}}\t{{.Status}}'"
+on_vm "$NEW_INSTANCE" "$COMPOSE_FN; cd $MOUNT/bitwarden_gcloud && compose up -d && sleep 25 && docker ps --format '{{.Names}}\t{{.Status}}'"
 
 say "Step 6/6: verify"
 DOMAIN=$(on_vm "$NEW_INSTANCE" "grep -E '^DOMAIN=' $MOUNT/bitwarden_gcloud/.env | cut -d= -f2 | tr -d '\"'" 2>/dev/null | tr -d '\r' || true)
