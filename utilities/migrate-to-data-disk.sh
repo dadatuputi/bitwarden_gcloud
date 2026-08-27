@@ -446,7 +446,10 @@ so the familiar path keeps working:
 
 EOF
 confirm_default_yes "Remove the old copy and create the symlink?"
-on_vm "set -e; rm -rf ~/bitwarden_gcloud; ln -s $MOUNT/bitwarden_gcloud ~/bitwarden_gcloud; ls -ld ~/bitwarden_gcloud"
+# sudo for the removal, not for the symlink: attachments, the RSA keys and
+# Caddy's certificate store are written by containers running as root, so the
+# invoking user cannot delete them. The link itself should belong to the user.
+on_vm "set -e; sudo rm -rf ~/bitwarden_gcloud; ln -s $MOUNT/bitwarden_gcloud ~/bitwarden_gcloud; ls -ld ~/bitwarden_gcloud"
 
 # Anything else left over is reported rather than removed. It is not this
 # script's to delete.

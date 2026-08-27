@@ -129,3 +129,16 @@ if printf '%s' "$logclear" | grep -q '|| true'; then
 else
 	pass "log-clear step does not blanket-suppress failures"
 fi
+
+# Anything that removes or copies the deployment must be privileged: containers
+# write attachments, RSA keys and Caddy's certificate store as root, so the
+# invoking user can neither read nor delete them.
+for script in "$ROOT/utilities/migrate-to-data-disk.sh" "$ROOT/utilities/upgrade-cos.sh"; do
+	rel=${script#"$ROOT"/}
+	unpriv=$(grep -nE 'on_vm .*(rm -rf|rm -f |cp -r|mv ) *[~/]' "$script" | grep -v 'sudo' || true)
+	if [ -z "$unpriv" ]; then
+		pass "$rel: no unprivileged removal or copy of deployment paths"
+	else
+		fail "$rel: no unprivileged removal or copy of deployment paths" "$unpriv"
+	fi
+done
