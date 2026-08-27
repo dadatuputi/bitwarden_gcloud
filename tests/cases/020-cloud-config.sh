@@ -26,27 +26,50 @@ b=[str(x) for x in d['bootcmd']]
 assert len(b)==3, 'bootcmd count'
 assert any(x.startswith('mount ') for x in b), 'no mount command'
 paths=[f['path'] for f in d['write_files']]
-assert any('cos-update-reboot.sh' in p for p in paths)
-# Docker starts before cloud-init and COS sets live-restore, so containers
-# created before the mount keep a stale bind until each one is restarted.
-rb='/var/lib/bwgc/rebind-containers.sh'
-assert rb in paths, 'no rebind script'
+body={f['path']: f['content'] for f in d['write_files']}
 run=[str(x) for x in d['runcmd']]
-hit=[i for i,x in enumerate(run) if rb in x]
-assert hit, 'rebind script never runs'
-assert hit[0]==0, 'rebind must run before anything else in runcmd'
-body=[f['content'] for f in d['write_files'] if f['path']==rb][0]
-assert 'mountpoint -q' in body, 'rebind does not check the mount'
-assert 'docker restart' in body, 'rebind never restarts containers'
-# The containers that failed on a stale bind have already exited, so listing
-# only running ones skips exactly the containers that need rebinding.
-assert 'docker ps -aq' in body, 'rebind skips exited containers'
+
+for p in ('/var/lib/bwgc/compose.sh','/var/lib/bwgc/start-stack.sh',
+          '/var/lib/bwgc/supervise-stack.sh','/var/lib/bwgc/cos-update-reboot.sh',
+          '/etc/systemd/system/bwgc.service','/etc/systemd/system/bwgc-supervise.timer',
+          '/etc/systemd/system/cos-update-reboot.timer'):
+    assert p in paths, 'missing '+p
+
+# The daemon starts an always/unless-stopped/on-failure container about twenty
+# seconds before cloud-init mounts the disk, so the stack must be started here
+# instead, once the mount exists.
+assert any('daemon-reload' in x for x in run), 'units never reloaded'
+assert run.index('systemctl daemon-reload')==0, 'reload must precede enabling units'
+assert any('bwgc.service' in x for x in run), 'stack service never started'
+assert any('bwgc-supervise.timer' in x for x in run), 'supervisor never started'
+
+st=body['/var/lib/bwgc/start-stack.sh']
+assert 'mountpoint -q' in st, 'start does not check the mount'
+assert 'exit 1' in st, 'start does not fail when the mount is missing'
+# compose up alone leaves an already-running container on its stale bind.
+assert 'down' in st and 'up -d' in st, 'start does not recreate the stack'
+assert st.index('down') < st.index('up -d'), 'start brings up before tearing down'
+
+sup=body['/var/lib/bwgc/supervise-stack.sh']
+assert 'up -d' in sup, 'supervisor never starts anything'
+assert 'down' not in sup, 'supervisor tears the stack down'
+
 # /var is mounted noexec on COS: execve on a script there fails 203/EXEC, so
-# every script under it must be handed to an interpreter.
-assert run[0].split()[0] in ('sh','/bin/sh','bash'), 'rebind is exec\'d directly from noexec /var'
-svc=[f['content'] for f in d['write_files'] if f['path'].endswith('cos-update-reboot.service')][0]
-ex=[l for l in svc.splitlines() if l.startswith('ExecStart=')][0]
-assert ex.split('=',1)[1].split()[0] in ('/bin/sh','sh','/bin/bash'), 'unit exec\'s a script from noexec /var'
+# every reference to one must go through an interpreter.
+for unit in [p for p in paths if p.startswith('/etc/systemd/')]:
+    for line in body[unit].splitlines():
+        if line.startswith(('ExecStart=','ExecStop=')):
+            cmd=line.split('=',1)[1].split()[0]
+            assert cmd in ('/bin/sh','sh','/bin/bash'), unit+' execs '+cmd+' directly'
+for script in [p for p in paths if p.startswith('/var/lib/bwgc/')]:
+    for line in body[script].splitlines():
+        t=line.strip()
+        if '/var/lib/bwgc/' in t and not t.startswith('#'):
+            assert t.startswith(('sh ','/bin/sh ')) or t.startswith(('BWGC_DIR=','MOUNT=')), \
+                script+' calls a noexec path directly: '+t
+for x in run:
+    if '/var/lib/bwgc/' in x:
+        assert x.split()[0] in ('sh','/bin/sh'), 'runcmd execs a noexec path: '+x
 " 2>"$WORK/yamlerr"; then pass "parses as YAML with the expected structure"
 	else fail "parses as YAML with the expected structure" "$(cat "$WORK/yamlerr")"; fi
 else

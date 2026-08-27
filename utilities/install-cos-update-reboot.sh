@@ -52,7 +52,7 @@ If you already have user-data set, merge rather than replace it. Save the
 current value first:
 
     gcloud compute instances describe INSTANCE --zone ZONE \\
-        --format="value(metadata.items.filter(\"key:user-data\").extract(value))"
+        --format='value(metadata.items.user-data)'
 
 The generated cloud-config is at: $OUT
 

@@ -335,10 +335,24 @@ EOF
 	exit 1
 fi
 
+# The daemon starts every container with an "always" policy about twenty
+# seconds before cloud-init mounts the disk, which binds them to an empty
+# directory on the boot disk. BWGC_RESTART_POLICY=no keeps the daemon out of it;
+# bwgc.service starts the stack once the mount is up and bwgc-supervise.timer
+# restarts anything that later stops.
+echo "setting BWGC_RESTART_POLICY=no so the stack waits for the data disk"
+on_vm "set -e; \
+  if sudo grep -q '^BWGC_RESTART_POLICY=' $MOUNT/bitwarden_gcloud/.env; then \
+    sudo sed -i 's/^BWGC_RESTART_POLICY=.*/BWGC_RESTART_POLICY=no/' $MOUNT/bitwarden_gcloud/.env; \
+  else \
+    printf '\n# Set by migrate-to-data-disk.sh. The stack is started by bwgc.service\n# once the data disk is mounted, not by the Docker daemon at boot.\nBWGC_RESTART_POLICY=no\n' | sudo tee -a $MOUNT/bitwarden_gcloud/.env >/dev/null; \
+  fi; \
+  sudo grep '^BWGC_RESTART_POLICY=' $MOUNT/bitwarden_gcloud/.env"
+
 say "Step 5/7: record the layout in instance metadata"
 BACKUP_META=$(mktemp)
 gcloud compute instances describe "$INSTANCE" --zone "$ZONE" \
-	--format="value(metadata.items.filter(\"key:user-data\").extract(value))" > "$BACKUP_META" 2>/dev/null || true
+	--format='value(metadata.items.user-data)' > "$BACKUP_META" 2>/dev/null || true
 CC=$(mktemp)
 emit_cloud_config "$DISK_NAME" "$MOUNT" "$REBOOT_TIME" > "$CC"
 

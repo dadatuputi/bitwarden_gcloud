@@ -13,7 +13,7 @@ services:
     # Vaultwarden is a Rust (mostly) feature-complete implementation of Bitwarden
     # https://github.com/dani-garcia/vaultwarden
     image: vaultwarden/server:latest-alpine
-    restart: always
+    restart: ${BWGC_RESTART_POLICY:-always}
     container_name: bitwarden
     mem_limit: 320m
     pids_limit: 200
@@ -54,7 +54,7 @@ services:
   backup:
     #build: ./docker/backup                                     # backup, in case container registry is not responsive
     image: ghcr.io/dadatuputi/bwgc_backup:master                # from https://github.com/dadatuputi/bwgc_backup
-    restart: on-failure
+    restart: ${BWGC_RESTART_POLICY:-on-failure}
     container_name: backup
     mem_limit: 192m
     pids_limit: 100
@@ -98,7 +98,7 @@ services:
     # https://caddyserver.com/
     #build: ./docker/proxy                              # backup, in case container registry is not responsive
     image: ghcr.io/dadatuputi/bwgc_caddy:master         # from https://github.com/dadatuputi/bwgc_proxy
-    restart: always
+    restart: ${BWGC_RESTART_POLICY:-always}
     container_name: proxy
     mem_limit: 128m
     pids_limit: 100
@@ -122,7 +122,7 @@ services:
     # and editing the ddns/config/ddclient.conf file
     # https://github.com/linuxserver/docker-ddclient
     image: linuxserver/ddclient
-    restart: always
+    restart: ${BWGC_RESTART_POLICY:-always}
     container_name: ddns
     mem_limit: 64m
     pids_limit: 50
@@ -164,7 +164,7 @@ services:
     # https://github.com/dani-garcia/vaultwarden/wiki/Fail2Ban-Setup
     # https://github.com/crazy-max/docker-fail2ban
     image: crazymax/fail2ban:latest
-    restart: always
+    restart: ${BWGC_RESTART_POLICY:-always}
     container_name: fail2ban
     mem_limit: 128m
     pids_limit: 100
@@ -192,7 +192,7 @@ services:
     # https://hub.docker.com/_/alpine/
     #build: ./docker/countryblock                       # backup, in case container registry is not responsive
     image: ghcr.io/dadatuputi/bwgc_countryblock:master  # from https://github.com/dadatuputi/bwgc_countryblock
-    restart: always
+    restart: ${BWGC_RESTART_POLICY:-always}
     container_name: countryblock
     mem_limit: 128m
     pids_limit: 100
@@ -214,7 +214,7 @@ services:
     # and restart it with the same options that were used when it was deployed initially
     # https://github.com/nicholas-fedor/watchtower
     image: nickfedor/watchtower
-    restart: always
+    restart: ${BWGC_RESTART_POLICY:-always}
     container_name: watchtower
     mem_limit: 96m
     pids_limit: 100
