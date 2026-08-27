@@ -15,6 +15,7 @@ set -eu
 DISK_NAME=bwgc-data
 MOUNT=/mnt/disks/bwgc
 BOOT_SIZE=10GB
+BOOT_DISK_NAME=
 REBOOT_TIME=06:00
 INSTANCE=
 NEW_INSTANCE=
@@ -38,6 +39,8 @@ Usage: $0 --instance NAME --zone ZONE [options]
   --disk-name NAME     the vault data disk (default: $DISK_NAME)
   --mount PATH         where it mounts (default: $MOUNT)
   --boot-size SIZE     new boot disk size (default: $BOOT_SIZE)
+  --boot-disk-name NAME name for the new boot disk (default: the instance name,
+                       which is what Compute Engine would pick anyway)
   --reboot-time HH:MM  update reboot window (default: $REBOOT_TIME)
   --keep-old           leave the old instance stopped and never delete it.
                        Implies --overlap. Costs free tier allowance until you
@@ -46,7 +49,8 @@ Usage: $0 --instance NAME --zone ZONE [options]
                        the two never coexist. THIS IS THE DEFAULT.
   --overlap            keep the old instance until the new one verifies. Only
                        possible when boot+boot+data fits in 30 GB, i.e. a data
-                       disk of 10 GB or less.
+                       disk of 10 GB or less. Also draws down the e2-micro
+                       allowance twice over while both run.
   --yes                do not prompt
 
 Free tier: 30 GB of pd-standard, and the boot disk holds nothing unique -- the
@@ -71,6 +75,7 @@ while [ $# -gt 0 ]; do
 	--disk-name) DISK_NAME="$2"; shift 2 ;;
 	--mount) MOUNT="$2"; shift 2 ;;
 	--boot-size) BOOT_SIZE="$2"; shift 2 ;;
+	--boot-disk-name) BOOT_DISK_NAME="$2"; shift 2 ;;
 	--reboot-time) REBOOT_TIME="$2"; shift 2 ;;
 	--keep-old) KEEP_OLD=1; DELETE_FIRST=0; shift ;;
 	--delete-first) DELETE_FIRST=1; shift ;;
@@ -222,6 +227,7 @@ gcloud compute instances create "$NEW_INSTANCE" \
 	--image-project cos-cloud \
 	--boot-disk-size "$BOOT_SIZE" \
 	--boot-disk-type pd-standard \
+	--boot-disk-device-name "${BOOT_DISK_NAME:-$NEW_INSTANCE}" \
 	--disk "name=$DISK_NAME,device-name=$DISK_NAME,mode=rw,boot=no" \
 	--metadata-from-file user-data="$CC"
 
