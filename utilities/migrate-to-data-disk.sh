@@ -122,17 +122,8 @@ confirm() {
 REPO_DIR=$(on_vm 'cd ~/bitwarden_gcloud >/dev/null 2>&1 && pwd' || true)
 [ -n "$REPO_DIR" ] || { echo "could not find ~/bitwarden_gcloud on $INSTANCE" >&2; exit 1; }
 
-say "Plan"
-cat <<EOF
-  instance    $INSTANCE  ($ZONE)
-  deployment  $REPO_DIR
-  new disk    $DISK_NAME  $DISK_SIZE  pd-standard
-  mounted at  $MOUNT
-  This will reboot the instance to prove the mount survives.
-EOF
-confirm "Proceed?"
-
 install_compose_helper
+
 
 # Two different states look alike here. The copy is on the disk either way; what
 # separates a finished migration from one that stopped partway is whether the
@@ -213,6 +204,20 @@ stack up, and run this script again. Nothing has been changed.
 EOF
 	exit 1
 fi
+
+# The plan is printed last, after the checks, so it never advertises work
+# this run is not going to do -- creating a disk on a host that already has
+# one, for instance -- and so a reader can see the prerequisites were
+# checked before they were asked to approve anything.
+say "Plan"
+cat <<EOF
+  instance    $INSTANCE  ($ZONE)
+  deployment  $REPO_DIR
+  new disk    $DISK_NAME  $DISK_SIZE  pd-standard
+  mounted at  $MOUNT
+  This will reboot the instance to prove the mount survives.
+EOF
+confirm "Proceed?"
 
 say "Step 1/7: reclaim space before copying"
 on_vm 'cd ~/bitwarden_gcloud \
@@ -660,7 +665,7 @@ cat <<EOF
 
       df -h $MOUNT
       cd ~/bitwarden_gcloud && docker-compose ps
-      curl -sI https://\$(grep '^DOMAIN=' .env | cut -d= -f2 | tr -d '"'"'"'"') /api/version | head -1
+      curl -sI https://\$(grep '^DOMAIN=' .env | cut -d= -f2 | tr -d '"'"'"'"')/api/version | head -1
 
   Log in from a real client before treating this as finished.
 

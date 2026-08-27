@@ -160,3 +160,28 @@ if printf '%s' "$upg" | grep -q 'Step [0-9]/6:'; then
 else
 	pass "the upgrade uses one step denominator"
 fi
+
+# Iteration 5: the plan printed before the prerequisite checks, so it could
+# advertise creating a disk on a host that already had one, and a reader could
+# not see that anything had been verified before being asked to approve.
+plan_line=$(printf '%s' "$mig" | grep -n 'say "Plan"' | head -1 | cut -d: -f1)
+guard_line=$(printf '%s' "$mig" | grep -n 'already mounted, holds a deployment' | head -1 | cut -d: -f1)
+pre_line=$(printf '%s' "$mig" | grep -n 'backup container is not running' | head -1 | cut -d: -f1)
+if [ -n "$plan_line" ] && [ -n "$guard_line" ] && [ "$guard_line" -lt "$plan_line" ]; then
+	pass "the re-entry guard runs before the plan is printed"
+else
+	fail "the re-entry guard runs before the plan is printed" "guard=$guard_line plan=$plan_line"
+fi
+if [ -n "$plan_line" ] && [ -n "$pre_line" ] && [ "$pre_line" -lt "$plan_line" ]; then
+	pass "the backup preflight runs before the plan is printed"
+else
+	fail "the backup preflight runs before the plan is printed" "preflight=$pre_line plan=$plan_line"
+fi
+
+# A space between the command substitution and the path made curl treat
+# /api/version as a second URL, in a command printed for the user to paste.
+if printf '%s' "$mig" | grep -q ') /api/version'; then
+	fail "the printed curl has no stray space before the path"
+else
+	pass "the printed curl has no stray space before the path"
+fi
