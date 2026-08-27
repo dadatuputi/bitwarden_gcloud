@@ -127,7 +127,7 @@ assert_contains "$upg" 'DISK_NAME_DEFAULT'          "keeps the fallback separate
 assert_contains "$upg" 'data disk read from'        "reads the data disk off the instance"
 assert_contains "$upg" 'No disk named $DISK_NAME'   "checks the disk exists"
 first_disk_check=$(printf '%s' "$upg" | grep -n 'No disk named' | head -1 | cut -d: -f1)
-stop_stack=$(printf '%s' "$upg" | grep -n 'Step 2/6' | head -1 | cut -d: -f1)
+stop_stack=$(printf '%s' "$upg" | grep -n 'stop the stack and release the data disk' | head -1 | cut -d: -f1)
 if [ -n "$first_disk_check" ] && [ -n "$stop_stack" ] && [ "$first_disk_check" -lt "$stop_stack" ]; then
 	pass "the disk check runs before the stack is stopped"
 else
@@ -141,3 +141,22 @@ assert_not_contains "$upg" "backup.sh local,rclone" "the upgrade does not demand
 # DNS may not point at the instance yet. That must not become the exit status of
 # an upgrade that otherwise worked.
 assert_contains "$upg" "external check above is informational" "the external check cannot fail the run"
+
+# A reader who presses Enter should get the cautious answer at every prompt. The
+# prompt guarding "sudo rm -rf ~/bitwarden_gcloud" defaulted to yes.
+for f in migrate-to-data-disk.sh upgrade-cos.sh; do
+	if grep -q '\[Y/n\]' "$ROOT/utilities/$f"; then
+		fail "$f: every prompt defaults to no" "$(grep -n '\[Y/n\]' "$ROOT/utilities/$f" | head -1)"
+	else
+		pass "$f: every prompt defaults to no"
+	fi
+done
+# A step called "verify" that prints a bare header gives no signal either way.
+assert_contains "$upg" "no DOMAIN in .env, skipped" "the vault check reports when it is skipped"
+assert_contains "$upg" "no answer yet" "the vault check reports when it gets nothing"
+# The step numbering announced 6/6 and then 7/7.
+if printf '%s' "$upg" | grep -q 'Step [0-9]/6:'; then
+	fail "the upgrade uses one step denominator" "$(printf '%s' "$upg" | grep -o 'Step [0-9]/6:' | head -1)"
+else
+	pass "the upgrade uses one step denominator"
+fi

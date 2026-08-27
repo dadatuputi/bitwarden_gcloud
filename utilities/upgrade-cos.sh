@@ -256,7 +256,7 @@ confirm "Proceed?"
 
 install_compose_helper "$INSTANCE"
 
-say "Step 1/6: back up and verify before touching anything"
+say "Step 1/7: back up and verify before touching anything"
 on_vm "$INSTANCE" "cd $MOUNT/bitwarden_gcloud && docker exec backup ash /backup.sh local"
 on_vm "$INSTANCE" "set -e; cd $MOUNT/bitwarden_gcloud; \
   LATEST=\$(ls -t bitwarden/backups/*.aes256 2>/dev/null | head -1); \
@@ -361,7 +361,7 @@ if [ -n "$OLD_NATIP" ]; then
 	fi
 fi
 
-say "Step 2/6: stop the stack and release the data disk"
+say "Step 2/7: stop the stack and release the data disk"
 # cd out of the mount before unmounting it: a shell cannot unmount the
 # filesystem it is standing in. Docker also keeps the directory referenced
 # briefly after containers are removed, so retry rather than failing on the
@@ -397,7 +397,7 @@ EOF
 	echo "old instance and boot disk deleted. Nothing to fall back to by design."
 fi
 
-say "Step 3/6: create the replacement with the disk attached from first boot"
+say "Step 3/7: create the replacement with the disk attached from first boot"
 CC=$(mktemp)
 emit_cloud_config "$DISK_NAME" "$MOUNT" "$REBOOT_TIME" > "$CC"
 gcloud compute instances create "$NEW_INSTANCE" \
@@ -418,7 +418,7 @@ gcloud compute instances create "$NEW_INSTANCE" \
 	${OLD_SUBNET:+--subnet "$OLD_SUBNET"} \
 	${RESERVED_IP:+--address "$RESERVED_IP"}
 
-say "Step 4/6: waiting for the new instance"
+say "Step 4/7: waiting for the new instance"
 # Tunable so the test harness does not wait five minutes for a mocked host.
 WAIT_TRIES="${BWGC_WAIT_TRIES:-30}"
 WAIT_SLEEP="${BWGC_WAIT_SLEEP:-10}"
@@ -480,7 +480,7 @@ fi
 # bwgc.service for the container names.
 on_vm "$NEW_INSTANCE" 'sudo cloud-init status --wait >/dev/null 2>&1; :'
 
-say "Step 5/6: bring the vault up on the new milestone"
+say "Step 5/7: bring the vault up on the new milestone"
 on_vm "$NEW_INSTANCE" "set -e; \
   echo '--- milestone ---'; grep -E '^(VERSION|BUILD_ID)=' /etc/os-release; \
   echo '--- docker ---'; docker --version; \
@@ -516,13 +516,15 @@ on_vm "$NEW_INSTANCE" "set -e; \
   install_compose_helper "$NEW_INSTANCE"
   on_vm "$NEW_INSTANCE" "docker ps --format '{{.Names}}\t{{.Status}}'"
 
-say "Step 6/6: verify"
+say "Step 6/7: verify"
 DOMAIN=$(on_vm "$NEW_INSTANCE" "grep -E '^DOMAIN=' $MOUNT/bitwarden_gcloud/.env | cut -d= -f2 | tr -d '\"'" 2>/dev/null | tr -d '\r' || true)
 on_vm "$NEW_INSTANCE" "set +e; \
   echo '--- jails ---'; docker exec fail2ban fail2ban-client status 2>&1 | tail -2; \
   echo '--- update timer ---'; systemctl list-timers cos-update-reboot.timer --no-pager | head -3; \
-  [ -n '$DOMAIN' ] && { echo '--- vault ---'; curl -sI --max-time 20 https://$DOMAIN/api/version | head -1; \
-    curl -sI --max-time 20 https://$DOMAIN/admin | grep -i x-frame-options; }; \
+    echo '--- vault ---'; \
+    if [ -z '$DOMAIN' ]; then echo 'no DOMAIN in .env, skipped'; \
+    else curl -sI --max-time 20 https://$DOMAIN/api/version | head -1 || echo 'no answer yet; DNS may not point here'; \
+      curl -sI --max-time 20 https://$DOMAIN/admin | grep -i x-frame-options; fi; \
     true"
 
 # The external check above is informational: DNS may not point here yet, or may
