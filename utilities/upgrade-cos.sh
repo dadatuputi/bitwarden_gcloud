@@ -256,25 +256,29 @@ confirm "Proceed?"
 
 install_compose_helper "$INSTANCE"
 
-# .env is only in the archive when BACKUP_ENV is true, and the rollback this
-# page documents restores it from there.
-if ! on_vm "$INSTANCE" 'grep -qE "^BACKUP_ENV=true" '"$MOUNT"'/bitwarden_gcloud/.env' >/dev/null 2>&1; then
-	cat >&2 <<EOF
+# The same rule as the migration: report what the backup will be, do not dictate
+# it. Only a backup that cannot be taken stops the run.
+BACKUP_ENC=no
+BACKUP_HAS_ENV=no
+on_vm "$INSTANCE" 'grep -qE "^BACKUP_ENCRYPTION_KEY=." '"$MOUNT"'/bitwarden_gcloud/.env' >/dev/null 2>&1 && BACKUP_ENC=yes
+on_vm "$INSTANCE" 'grep -qE "^BACKUP_ENV=true" '"$MOUNT"'/bitwarden_gcloud/.env' >/dev/null 2>&1 && BACKUP_HAS_ENV=yes
 
-BACKUP_ENV is not true in $MOUNT/bitwarden_gcloud/.env.
-
-The backup taken next is the rollback for this upgrade, and .env is only
-included when BACKUP_ENV=true. Without it the archive holds the vault database
-but not the settings the stack needs to start. The archive is encrypted, so
-turning this on does not expose it.
-
-    gcloud compute ssh $INSTANCE --zone $ZONE --command \\
-      'cd $MOUNT/bitwarden_gcloud && sudo sed -i "s/^BACKUP_ENV=.*/BACKUP_ENV=true/" .env'
-
-Nothing has been changed.
-EOF
-	exit 1
+echo
+echo "The rollback backup for this upgrade will be:"
+if [ "$BACKUP_ENC" = yes ]; then
+	echo "  encrypted       yes. Record BACKUP_ENCRYPTION_KEY off this instance now:"
+	echo "                  gcloud compute ssh $INSTANCE --zone $ZONE --command \\"
+	echo "                    'sudo grep \"^BACKUP_ENCRYPTION_KEY=\" $MOUNT/bitwarden_gcloud/.env'"
+else
+	echo "  encrypted       NO. The downloaded copy is a plain archive of your"
+	echo "                  vault. Treat it as a secret."
 fi
+if [ "$BACKUP_HAS_ENV" = yes ]; then
+	echo "  includes .env   yes"
+else
+	echo "  includes .env   no. A restore would need .env rebuilt by hand."
+fi
+echo
 
 say "Step 1/7: back up and verify before touching anything"
 on_vm "$INSTANCE" "cd $MOUNT/bitwarden_gcloud && docker exec backup ash /backup.sh local"
