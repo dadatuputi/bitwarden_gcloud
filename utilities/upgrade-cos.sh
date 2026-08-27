@@ -23,6 +23,7 @@ NEW_INSTANCE=
 ZONE=
 IMAGE_FAMILY=
 ASSUME_YES=0
+RESERVE_IP=1
 KEEP_OLD=0
 DELETE_FIRST=1
 
@@ -54,6 +55,10 @@ Usage: $0 --instance NAME --zone ZONE [options]
                        possible when boot+boot+data fits in 30 GB, i.e. a data
                        disk of 10 GB or less. Also draws down the e2-micro
                        allowance twice over while both run.
+  --no-reserve-ip      do not reserve an ephemeral external IP before deleting
+                       the old instance. The replacement then comes up on a
+                       different address and DNS pointing at the old one goes
+                       stale.
   --yes                do not prompt
 
 Free tier: 30 GB of pd-standard, and the boot disk holds nothing unique -- the
@@ -83,6 +88,7 @@ while [ $# -gt 0 ]; do
 	--keep-old) KEEP_OLD=1; DELETE_FIRST=0; shift ;;
 	--delete-first) DELETE_FIRST=1; shift ;;
 	--overlap) DELETE_FIRST=0; shift ;;
+	--no-reserve-ip) RESERVE_IP=0; shift ;;
 	--yes) ASSUME_YES=1; shift ;;
 	-h|--help) usage; exit 0 ;;
 	*) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -282,12 +288,28 @@ if [ -n "$OLD_NATIP" ]; then
 	if [ -n "$IP_KIND" ]; then
 		echo "  external IP      $OLD_NATIP (reserved as '$IP_KIND', will be reattachable)"
 		RESERVED_IP=$IP_KIND
+	elif [ "$RESERVE_IP" -eq 1 ]; then
+		# Promoting an in-use ephemeral address converts it in place: the running
+		# instance keeps serving, and the address now survives the delete. An
+		# attached static address is billed the same as an ephemeral one.
+		REGION=${ZONE%-*}
+		PROMOTED_IP_NAME="${INSTANCE}-ip"
+		if gcloud compute addresses create "$PROMOTED_IP_NAME" \
+			--addresses "$OLD_NATIP" --region "$REGION" >/dev/null 2>&1; then
+			echo "  external IP      $OLD_NATIP (was ephemeral, now reserved as '$PROMOTED_IP_NAME')"
+			RESERVED_IP=$PROMOTED_IP_NAME
+		else
+			echo "" >&2
+			echo "WARNING: $OLD_NATIP could not be reserved, so it is released when" >&2
+			echo "this instance is deleted and the replacement comes up on a different" >&2
+			echo "address. Any DNS record pointing here goes stale until you update it." >&2
+			confirm "Continue and let the external IP change?"
+		fi
 	else
 		echo "" >&2
-		echo "NOTE: $OLD_NATIP is ephemeral and is released when this instance is" >&2
-		echo "deleted. The replacement gets a different address. The ddns container" >&2
-		echo "updates DNS on startup, so this is usually fine -- but anything else" >&2
-		echo "pinned to that address will need updating." >&2
+		echo "NOTE: $OLD_NATIP is ephemeral and --no-reserve-ip was given, so it is" >&2
+		echo "released when this instance is deleted. The replacement gets a different" >&2
+		echo "address and any DNS record pointing here goes stale." >&2
 	fi
 fi
 

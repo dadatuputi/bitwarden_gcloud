@@ -22,8 +22,31 @@ if command -v python3 >/dev/null 2>&1 && python3 -c "import ruamel.yaml" 2>/dev/
 import io,sys
 from ruamel.yaml import YAML
 d=YAML(typ='safe').load(io.open('$WORK/cc.yaml'))
-assert len(d['bootcmd'])==3, 'bootcmd count'
-assert any('cos-update-reboot.sh' in f['path'] for f in d['write_files'])
+b=[str(x) for x in d['bootcmd']]
+assert len(b)==3, 'bootcmd count'
+assert any(x.startswith('mount ') for x in b), 'no mount command'
+paths=[f['path'] for f in d['write_files']]
+assert any('cos-update-reboot.sh' in p for p in paths)
+# Docker starts before cloud-init and COS sets live-restore, so containers
+# created before the mount keep a stale bind until each one is restarted.
+rb='/var/lib/bwgc/rebind-containers.sh'
+assert rb in paths, 'no rebind script'
+run=[str(x) for x in d['runcmd']]
+hit=[i for i,x in enumerate(run) if rb in x]
+assert hit, 'rebind script never runs'
+assert hit[0]==0, 'rebind must run before anything else in runcmd'
+body=[f['content'] for f in d['write_files'] if f['path']==rb][0]
+assert 'mountpoint -q' in body, 'rebind does not check the mount'
+assert 'docker restart' in body, 'rebind never restarts containers'
+# The containers that failed on a stale bind have already exited, so listing
+# only running ones skips exactly the containers that need rebinding.
+assert 'docker ps -aq' in body, 'rebind skips exited containers'
+# /var is mounted noexec on COS: execve on a script there fails 203/EXEC, so
+# every script under it must be handed to an interpreter.
+assert run[0].split()[0] in ('sh','/bin/sh','bash'), 'rebind is exec\'d directly from noexec /var'
+svc=[f['content'] for f in d['write_files'] if f['path'].endswith('cos-update-reboot.service')][0]
+ex=[l for l in svc.splitlines() if l.startswith('ExecStart=')][0]
+assert ex.split('=',1)[1].split()[0] in ('/bin/sh','sh','/bin/bash'), 'unit exec\'s a script from noexec /var'
 " 2>"$WORK/yamlerr"; then pass "parses as YAML with the expected structure"
 	else fail "parses as YAML with the expected structure" "$(cat "$WORK/yamlerr")"; fi
 else

@@ -25,8 +25,8 @@ emit_cloud_config() {
 # here instead of installed onto the filesystem.
 
 bootcmd:
-# Check and mount the vault data disk before Docker starts. mkdir is required
-# every boot: /mnt/disks is tmpfs and does not persist either.
+# Mount the vault data disk. mkdir is required every boot: /mnt/disks is tmpfs
+# and does not persist either.
 - fsck.ext4 -tvy /dev/disk/by-id/google-${_disk}
 - mkdir -p ${_mount}
 - mount -t ext4 -o discard,defaults /dev/disk/by-id/google-${_disk} ${_mount}
@@ -54,6 +54,35 @@ write_files:
       echo "cos-update-reboot: nothing staged, not rebooting"
     fi
 
+- path: /var/lib/bwgc/rebind-containers.sh
+  permissions: "0755"
+  owner: root
+  content: |
+    #!/usr/bin/env sh
+    # Restart every container so its bind mounts resolve to the data disk.
+    #
+    # docker.service belongs to cos-critical.target and starts about twenty
+    # seconds before cloud-init mounts ${_mount}, so containers are created while
+    # that path is still empty. Docker materialises a missing bind source as a
+    # directory: file mounts such as .env and the Caddyfile then fail with "not a
+    # directory", and directory mounts quietly read the boot disk instead of the
+    # vault. COS sets live-restore, so containers survive a daemon restart and
+    # keep the stale mount; restarting each container re-resolves it.
+    set -eu
+    MOUNT=${_mount}
+    if ! mountpoint -q "\$MOUNT"; then
+      echo "rebind: \$MOUNT is not mounted, leaving containers alone" >&2
+      exit 0
+    fi
+    IDS="\$(docker ps -aq)"
+    if [ -z "\$IDS" ]; then
+      echo "rebind: no containers"
+      exit 0
+    fi
+    echo "rebind: restarting \$(printf '%s\\n' "\$IDS" | wc -l) containers against \$MOUNT"
+    # shellcheck disable=SC2086
+    docker restart \$IDS
+
 - path: /etc/systemd/system/cos-update-reboot.service
   permissions: "0644"
   owner: root
@@ -65,7 +94,7 @@ write_files:
 
     [Service]
     Type=oneshot
-    ExecStart=/var/lib/bwgc/cos-update-reboot.sh
+    ExecStart=/bin/sh /var/lib/bwgc/cos-update-reboot.sh
 
 - path: /etc/systemd/system/cos-update-reboot.timer
   permissions: "0644"
@@ -82,6 +111,8 @@ write_files:
     WantedBy=timers.target
 
 runcmd:
+# runcmd is the first stage that runs after write_files, so the script exists.
+- sh /var/lib/bwgc/rebind-containers.sh
 - systemctl daemon-reload
 - systemctl enable --now cos-update-reboot.timer
 EOF

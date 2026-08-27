@@ -74,7 +74,11 @@ assert_contains "$mig" "did not come back after the reboot" "reports an instance
 assert_contains "$mig" "get-serial-port-output"             "points at the serial console"
 assert_contains "$mig" "database size differs"              "compares the database size"
 assert_contains "$mig" "fewer files on the data disk"       "compares the file count"
-assert_contains "$mig" "MISSING:"                           "checks key files are present"
+assert_contains "$mig" "not a regular file:"                "checks key files are present"
+# Docker materialises a missing bind source as a directory, so -e passes on
+# exactly the corruption this is meant to catch.
+assert_contains "$mig" 'caddy/Caddyfile'                    "verifies the file mounts, not just the data"
+assert_not_contains "$mig" '[ -e \"$MOUNT/bitwarden_gcloud'  "requires regular files, not merely existing paths"
 
 # Running compose through the ~/bitwarden_gcloud symlink must resolve to the
 # same paths the containers were created with, or every switch between the

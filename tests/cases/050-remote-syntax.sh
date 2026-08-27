@@ -102,7 +102,7 @@ assert_contains "$up" "for i in 1 2 3 4 5 6" "retries the unmount rather than fa
 assert_contains "$up" "could not unmount"    "reports what is holding the mount when it never releases"
 
 # Any command that unmounts must not have the mount as its working directory.
-bad_umount=$(printf '%s' "$up" | grep -n "cd $MOUNT.*umount $MOUNT" || true)
+bad_umount=$(printf '%s' "$up" | grep -n 'cd \$MOUNT.*umount \$MOUNT' || true)
 if [ -z "$bad_umount" ]; then
 	pass "no command unmounts the directory it cd'd into"
 else
@@ -134,8 +134,15 @@ assert_not_contains "$create" "e2-micro"      "does not force e2-micro over the 
 # A reserved address survives deletion and should be reattached; an ephemeral
 # one cannot be, and the operator is told.
 assert_contains "$create" "--address"         "reattaches a reserved external address"
-assert_contains "$(cat "$ROOT/utilities/upgrade-cos.sh")" "is ephemeral and is released" \
-  "warns when the external address cannot be carried over"
+upg=$(cat "$ROOT/utilities/upgrade-cos.sh")
+assert_contains "$upg" "gcloud compute addresses create" \
+  "reserves an ephemeral address so it survives the delete"
+assert_contains "$upg" '--addresses "$OLD_NATIP"' \
+  "promotes the address the instance already has"
+assert_contains "$upg" "Continue and let the external IP change?" \
+  "asks before proceeding when the address cannot be reserved"
+assert_contains "$upg" "--no-reserve-ip" \
+  "reserving can be declined"
 
 # Deleting the instance destroys everything not captured first.
 assert_contains "$(cat "$ROOT/utilities/upgrade-cos.sh")" "instance-\$INSTANCE.json" \

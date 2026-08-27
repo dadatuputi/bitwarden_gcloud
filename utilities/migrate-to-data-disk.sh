@@ -311,8 +311,8 @@ if ! on_vm "$COMPOSE_SRC set -e; cd ~/bitwarden_gcloud && compose down; \
   sudo rsync -a --delete --exclude 'bitwarden/backups/' ~/bitwarden_gcloud/ $MOUNT/bitwarden_gcloud/; \
   sudo mkdir -p $MOUNT/bitwarden_gcloud/bitwarden/backups; \
   echo '--- verifying the copy ---'; \
-  for f in docker-compose.yml .env bitwarden/db.sqlite3; do \
-    [ -e \"$MOUNT/bitwarden_gcloud/\$f\" ] || { echo \"MISSING: \$f\" >&2; exit 1; }; \
+  for f in docker-compose.yml .env caddy/Caddyfile bitwarden/db.sqlite3; do \
+    [ -f \"$MOUNT/bitwarden_gcloud/\$f\" ] || { echo \"not a regular file: \$f\" >&2; exit 1; }; \
   done; \
   SRC_DB=\$(sudo stat -c %s ~/bitwarden_gcloud/bitwarden/db.sqlite3); \
   DST_DB=\$(sudo stat -c %s $MOUNT/bitwarden_gcloud/bitwarden/db.sqlite3); \

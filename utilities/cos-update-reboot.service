@@ -6,4 +6,4 @@ Wants=update-engine.service
 
 [Service]
 Type=oneshot
-ExecStart=/var/lib/bitwarden_gcloud/cos-update-reboot.sh
+ExecStart=/bin/sh /var/lib/bitwarden_gcloud/cos-update-reboot.sh
