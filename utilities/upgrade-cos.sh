@@ -201,8 +201,14 @@ cat <<EOF
   data disk   $DISK_NAME  ->  $MOUNT
   zone        $ZONE
 
-  The old instance is stopped, not deleted. Rollback is starting it again.
 EOF
+if [ "$DELETE_FIRST" -eq 1 ]; then
+	echo "  $INSTANCE and its boot disk are DELETED before the replacement is built."
+	echo "  $DISK_NAME is detached first and keeps your vault. There is no way back"
+	echo "  to the old milestone afterwards."
+else
+	echo "  $INSTANCE is stopped, not deleted. Rollback is starting it again."
+fi
 [ "$CURRENT" = "$MILESTONE" ] && echo "  NOTE: already on milestone $MILESTONE."
 confirm "Proceed?"
 
@@ -437,7 +443,13 @@ on_vm "$NEW_INSTANCE" "set -e; \
   ln -sfn $MOUNT/bitwarden_gcloud ~/bitwarden_gcloud; \
   ls -ld ~/bitwarden_gcloud"
 install_compose_helper "$NEW_INSTANCE"
-on_vm "$NEW_INSTANCE" "$COMPOSE_SRC cd $MOUNT/bitwarden_gcloud && compose up -d && sleep 25 && docker ps --format '{{.Names}}\t{{.Status}}'"
+on_vm "$NEW_INSTANCE" "$COMPOSE_SRC set -e; \
+  if [ \"\$(systemctl is-active bwgc.service 2>/dev/null)\" = active ]; then \
+    echo 'stack started by bwgc.service'; \
+  else \
+    cd $MOUNT/bitwarden_gcloud && compose up -d; \
+  fi; \
+  sleep 25; docker ps --format '{{.Names}}\t{{.Status}}'"
 
 say "Step 6/6: verify"
 DOMAIN=$(on_vm "$NEW_INSTANCE" "grep -E '^DOMAIN=' $MOUNT/bitwarden_gcloud/.env | cut -d= -f2 | tr -d '\"'" 2>/dev/null | tr -d '\r' || true)
