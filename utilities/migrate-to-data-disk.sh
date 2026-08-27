@@ -104,8 +104,10 @@ confirm "Proceed?"
 
 say "Step 1/6: reclaim space before copying"
 on_vm 'cd ~/bitwarden_gcloud \
+  && echo "--- before ---" && docker system df \
   && docker image prune -af >/dev/null 2>&1 || true; \
-  echo "--- reclaimable now ---"; docker system df'
+  docker builder prune -af >/dev/null 2>&1 || true; \
+  echo "--- after ---"; docker system df'
 on_vm "$COMPOSE_FN; cd ~/bitwarden_gcloud \
   && if [ -s bitwarden/bitwarden.log ]; then \
        ls -lh bitwarden/bitwarden.log; \

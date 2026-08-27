@@ -28,3 +28,11 @@ for script in "$ROOT/utilities/migrate-to-data-disk.sh" "$ROOT/utilities/upgrade
 		fail "$rel: every remote compose call carries the definition" "$missing"
 	fi
 done
+
+# Reclaiming space before the copy has to cover the build cache as well as
+# images. "docker image prune" does not touch it, and on a host that has ever
+# built locally it is often the largest single item.
+mig=$(cat "$ROOT/utilities/migrate-to-data-disk.sh")
+assert_contains "$mig" "docker image prune -af"   "prunes unused images"
+assert_contains "$mig" "docker builder prune -af" "prunes the build cache"
+assert_contains "$mig" "bitwarden.log"            "clears the unrotated vault log"
