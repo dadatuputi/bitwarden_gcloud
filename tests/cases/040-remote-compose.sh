@@ -52,3 +52,26 @@ if printf '%s' "$mig" | grep -qE '^[[:space:]]*rsync -a'; then
 else
 	pass "no unprivileged rsync of the deployment"
 fi
+
+# The helper has to exist before it is sourced, and survive the reboot the
+# migration performs. /tmp is tmpfs on COS.
+for script in "$ROOT/utilities/migrate-to-data-disk.sh" "$ROOT/utilities/upgrade-cos.sh"; do
+	rel=${script#"$ROOT"/}
+	src=$(cat "$script")
+	assert_not_contains "$src" "COMPOSE_HELPER=/tmp/" "$rel does not keep the helper on tmpfs"
+	first_use=$(grep -n 'COMPOSE_SRC ' "$script" | head -1 | cut -d: -f1)
+	first_install=$(grep -n '^install_compose_helper' "$script" | head -1 | cut -d: -f1)
+	if [ -n "$first_install" ] && [ "$first_install" -lt "$first_use" ]; then
+		pass "$rel installs the helper before sourcing it"
+	else
+		fail "$rel installs the helper before sourcing it" "install=$first_install first use=$first_use"
+	fi
+done
+
+# A reboot the instance never returns from, and a copy that silently drops
+# files, both need to be caught rather than assumed away.
+assert_contains "$mig" "did not come back after the reboot" "reports an instance that never returns"
+assert_contains "$mig" "get-serial-port-output"             "points at the serial console"
+assert_contains "$mig" "database size differs"              "compares the database size"
+assert_contains "$mig" "fewer files on the data disk"       "compares the file count"
+assert_contains "$mig" "MISSING:"                           "checks key files are present"

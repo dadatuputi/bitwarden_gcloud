@@ -96,7 +96,7 @@ command -v gcloud >/dev/null 2>&1 || { echo "gcloud not found. Run this from Clo
 # non-interactive ssh command never sources. The definition is written to the
 # instance once and sourced by each remote command that needs it. Carrying it
 # inline instead means nesting quotes inside quotes at every call site.
-COMPOSE_HELPER=/tmp/bwgc-compose.sh
+COMPOSE_HELPER='~/.bwgc-compose.sh'
 COMPOSE_SRC=". $COMPOSE_HELPER;"
 
 # Heredoc body is quoted, so nothing in it is expanded locally.
@@ -197,6 +197,8 @@ EOF
 [ "$CURRENT" = "$MILESTONE" ] && echo "  NOTE: already on milestone $MILESTONE."
 confirm "Proceed?"
 
+install_compose_helper "$INSTANCE"
+
 say "Step 1/6: back up and verify before touching anything"
 on_vm "$INSTANCE" "cd $MOUNT/bitwarden_gcloud && docker exec backup ash /backup.sh local,rclone"
 on_vm "$INSTANCE" "set -e; cd $MOUNT/bitwarden_gcloud; \
@@ -294,6 +296,7 @@ on_vm "$NEW_INSTANCE" "set -e; \
   echo '--- boot disk split ---'; lsblk -o NAME,SIZE,TYPE | head -4; \
   echo '--- data disk ---'; df -h $MOUNT; \
   cd $MOUNT/bitwarden_gcloud && ./utilities/install-alias.sh >/dev/null 2>&1 || true"
+install_compose_helper "$NEW_INSTANCE"
 on_vm "$NEW_INSTANCE" "$COMPOSE_SRC cd $MOUNT/bitwarden_gcloud && compose up -d && sleep 25 && docker ps --format '{{.Names}}\t{{.Status}}'"
 
 say "Step 6/6: verify"

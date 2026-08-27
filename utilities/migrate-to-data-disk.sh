@@ -81,7 +81,7 @@ command -v gcloud >/dev/null 2>&1 || { echo "gcloud not found. Run this from Clo
 # non-interactive ssh command never sources. The definition is written to the
 # instance once and sourced by each remote command that needs it. Carrying it
 # inline instead means nesting quotes inside quotes at every call site.
-COMPOSE_HELPER=/tmp/bwgc-compose.sh
+COMPOSE_HELPER='~/.bwgc-compose.sh'
 COMPOSE_SRC=". $COMPOSE_HELPER;"
 
 # Heredoc body is quoted, so nothing in it is expanded locally.
@@ -126,6 +126,8 @@ cat <<EOF
   This will reboot the instance to prove the mount survives.
 EOF
 confirm "Proceed?"
+
+install_compose_helper
 
 say "Step 1/6: reclaim space before copying"
 on_vm 'cd ~/bitwarden_gcloud \
@@ -247,6 +249,17 @@ if ! on_vm "$COMPOSE_SRC set -e; cd ~/bitwarden_gcloud && compose down; \
   echo 'copying deployment (excluding local backups, which are already offsite)'; \
   sudo rsync -a --delete --exclude 'bitwarden/backups/' ~/bitwarden_gcloud/ $MOUNT/bitwarden_gcloud/; \
   sudo mkdir -p $MOUNT/bitwarden_gcloud/bitwarden/backups; \
+  echo '--- verifying the copy ---'; \
+  for f in docker-compose.yml .env bitwarden/db.sqlite3; do \
+    [ -e \"$MOUNT/bitwarden_gcloud/\$f\" ] || { echo \"MISSING: \$f\" >&2; exit 1; }; \
+  done; \
+  SRC_DB=\$(sudo stat -c %s ~/bitwarden_gcloud/bitwarden/db.sqlite3); \
+  DST_DB=\$(sudo stat -c %s $MOUNT/bitwarden_gcloud/bitwarden/db.sqlite3); \
+  [ \"\$SRC_DB\" = \"\$DST_DB\" ] || { echo \"database size differs: \$SRC_DB vs \$DST_DB\" >&2; exit 1; }; \
+  SRC_N=\$(sudo find ~/bitwarden_gcloud -path '*/bitwarden/backups' -prune -o -type f -print | wc -l); \
+  DST_N=\$(sudo find $MOUNT/bitwarden_gcloud -path '*/bitwarden/backups' -prune -o -type f -print | wc -l); \
+  echo \"files: \$SRC_N source, \$DST_N copied\"; \
+  [ \"\$DST_N\" -ge \"\$SRC_N\" ] || { echo 'fewer files on the data disk than in the source' >&2; exit 1; }; \
   sudo du -sh $MOUNT/bitwarden_gcloud"; then
 	cat >&2 <<EOF
 
@@ -290,6 +303,20 @@ while [ $i -lt "$WAIT_TRIES" ]; do
 	if on_vm 'true' >/dev/null 2>&1; then break; fi
 	i=$((i + 1))
 done
+
+if ! on_vm 'true' >/dev/null 2>&1; then
+	cat >&2 <<EOF
+
+$INSTANCE did not come back after the reboot.
+
+Your vault data is on $DISK_NAME and in the backup taken in Step 2. Nothing is
+lost, but the instance is not serving. Check the serial console:
+
+    gcloud compute instances get-serial-port-output $INSTANCE --zone $ZONE | tail -40
+EOF
+	exit 1
+fi
+install_compose_helper
 on_vm "$COMPOSE_SRC set -e; echo '--- mount ---'; df -h $MOUNT; \
   echo '--- timer ---'; systemctl list-timers cos-update-reboot.timer --no-pager | head -3; \
   echo '--- starting the stack from its new home ---'; \
