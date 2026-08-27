@@ -436,6 +436,12 @@ EOF
 	exit 1
 fi
 
+# cloud-init mounts the disk in bootcmd but starts the stack and enables the
+# timers later, in runcmd. Waiting only for the mount means arriving while that
+# is still in flight: the timer listing comes back empty and compose races
+# bwgc.service for the container names.
+on_vm "$NEW_INSTANCE" 'sudo cloud-init status --wait >/dev/null 2>&1; :'
+
 say "Step 5/6: bring the vault up on the new milestone"
 on_vm "$NEW_INSTANCE" "set -e; \
   echo '--- milestone ---'; grep -E '^(VERSION|BUILD_ID)=' /etc/os-release; \

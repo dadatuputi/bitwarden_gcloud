@@ -9,9 +9,31 @@ upg=$(cat "$ROOT/utilities/upgrade-cos.sh")
 # Matched against code only: a comment explains why reset is not used.
 mig_code=$(grep -vE '^[[:space:]]*#' "$ROOT/utilities/migrate-to-data-disk.sh")
 assert_not_contains "$mig_code" "instances reset" "never hard-resets the instance"
-assert_contains "$mig" "instances stop"       "shuts down before the power cycle"
-assert_contains "$mig" "instances start"      "starts it again afterwards"
-assert_contains "$mig" "on_vm 'sync'"         "flushes before shutting down"
+# Stopping an instance releases its ephemeral external address, so the vault
+# would come back on a different IP with DNS still pointing at the old one. An
+# in-guest reboot is graceful and leaves the instance running.
+assert_not_contains "$mig_code" "instances stop"  "does not stop the instance to reboot it"
+assert_not_contains "$mig_code" "instances start" "does not start it again, having not stopped it"
+assert_contains "$mig" "sudo systemctl reboot"    "reboots from inside the guest"
+assert_contains "$mig" "sync; sudo systemctl reboot" "flushes in the same command that reboots"
+# ssh answers again before the old boot has finished going down, so a changed
+# boot id is what proves the reboot happened.
+assert_contains "$mig" "boot_id"                  "verifies the reboot by boot id"
+
+# The timers and the stack are brought up in cloud-init runcmd, after the mount.
+assert_contains "$mig" "cloud-init status --wait" "waits for cloud-init before checking its work"
+assert_contains "$upg" "cloud-init status --wait" "the upgrade waits too"
+
+# A run that copied the data but never wrote the metadata is not a finished
+# migration: nothing remounts the disk on the next boot.
+assert_contains "$mig" "Finish the interrupted migration?" "offers to finish an interrupted run"
+assert_contains "$mig" 'RESUME=0'                 "a normal run does not take the resume path"
+assert_contains "$mig" 'if [ "$RESUME" -eq 0 ]; then' "the copy steps are skipped when resuming"
+
+# The old instructions built a 30 GB boot disk, so the free-tier arithmetic has
+# to use the disk the instance actually has.
+assert_contains "$mig" "disks describe" "reads the real boot disk size"
+assert_not_contains "$mig" "BOOT_MIN"   "does not treat the image minimum as the boot size"
 if printf '%s' "$mig" | grep -q 'sync"$'; then
 	pass "flushes again after writing to the data disk"
 else
