@@ -1,0 +1,9 @@
+[Unit]
+Description=Reboot if Container-Optimized OS has a staged update
+Documentation=https://github.com/dadatuputi/bitwarden_gcloud
+After=update-engine.service
+Wants=update-engine.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /var/lib/bitwarden_gcloud/cos-update-reboot.sh
