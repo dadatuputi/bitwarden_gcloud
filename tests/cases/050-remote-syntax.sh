@@ -108,3 +108,18 @@ if [ -z "$bad_umount" ]; then
 else
 	fail "no command unmounts the directory it cd'd into" "$bad_umount"
 fi
+
+# Tags and scopes are properties of the instance, not the image or the disks.
+# Without the tags, firewall rules that target them do not apply and the
+# replacement is unreachable from the internet. Without compute.readonly the
+# instance cannot check whether its own milestone is still supported.
+W2="$WORK/carry"; rm -rf "$W2"; mkdir -p "$W2"
+GCLOUD_LOG="$W2/calls.log"; export GCLOUD_LOG
+( cd "$W2" && "$ROOT/utilities/upgrade-cos.sh" --instance vault --zone us-central1-a --yes ) >/dev/null 2>&1 || true
+create=$(grep 'instances create' "$W2/calls.log" | head -1)
+assert_contains "$create" "--tags"            "carries network tags to the replacement"
+assert_contains "$create" "http-server,https-server" "tags are comma-separated, as --tags requires"
+assert_contains "$create" "--scopes"          "carries service account scopes"
+assert_contains "$create" "compute.readonly"  "keeps the scope the milestone check needs"
+assert_contains "$create" "--service-account" "carries the service account"
+assert_not_contains "$create" "http-server;"  "no semicolon separator reaches gcloud"

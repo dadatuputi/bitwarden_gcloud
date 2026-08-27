@@ -61,7 +61,19 @@ case "$1 $2" in
 "compute instances")
 	case "$3" in
 	create) [ "${MOCK_FAIL_CREATE:-0}" = "1" ] && { echo "ERROR: ZONE_RESOURCE_POOL_EXHAUSTED" >&2; exit 1; } ;;
-	describe) printf '\n' ;;
+	describe)
+		# Answer by the --format asked for, so carry-over of tags, scopes and
+		# service account is actually exercised rather than silently skipped.
+		FMT=""
+		for a in "$@"; do case "$a" in --format=*) FMT="${a#--format=}" ;; esac; done
+		case "$FMT" in
+		*tags.items*)              printf '%s\n' "${MOCK_TAGS-http-server;https-server}" ;;
+		*scopes*)                  printf '%s\n' "${MOCK_SCOPES-https://www.googleapis.com/auth/compute.readonly}" ;;
+		*serviceAccounts*email*)   printf '%s\n' "${MOCK_SA-123-compute@developer.gserviceaccount.com}" ;;
+		*status*)                  printf 'RUNNING\n' ;;
+		*)                         printf '\n' ;;
+		esac
+		;;
 	esac
 	exit 0
 	;;

@@ -227,6 +227,24 @@ else
 	confirm "Continue without a local copy?"
 fi
 
+# Read the old instance's tags and scopes before deleting it. Neither is
+# implied by the image or the disks: without the tags the firewall rules, which
+# target http-server and https-server, do not apply and the vault is
+# unreachable from the internet. Without compute-ro the instance cannot check
+# whether its own milestone is still supported.
+OLD_TAGS=$(gcloud compute instances describe "$INSTANCE" --zone "$ZONE" \
+	--format="value(tags.items.list())" 2>/dev/null | tr -d ' ' | tr ';' ',' || true)
+OLD_SCOPES=$(gcloud compute instances describe "$INSTANCE" --zone "$ZONE" \
+	--format="value(serviceAccounts[0].scopes.list())" 2>/dev/null | tr -d ' ' | tr ';' ',' || true)
+OLD_SA=$(gcloud compute instances describe "$INSTANCE" --zone "$ZONE" \
+	--format="value(serviceAccounts[0].email)" 2>/dev/null | tr -d ' ' || true)
+echo "carrying over: tags=${OLD_TAGS:-none} scopes=${OLD_SCOPES:-default} service-account=${OLD_SA:-default}"
+if [ -z "$OLD_TAGS" ]; then
+	echo "WARNING: the current instance has no network tags. If your firewall rules" >&2
+	echo "target tags, the replacement will be unreachable. Check before continuing." >&2
+	confirm "Continue with no network tags?"
+fi
+
 say "Step 2/6: stop the stack and release the data disk"
 # cd out of the mount before unmounting it: a shell cannot unmount the
 # filesystem it is standing in. Docker also keeps the directory referenced
@@ -275,7 +293,10 @@ gcloud compute instances create "$NEW_INSTANCE" \
 	--boot-disk-type pd-standard \
 	--boot-disk-device-name "${BOOT_DISK_NAME:-$NEW_INSTANCE}" \
 	--disk "name=$DISK_NAME,device-name=$DISK_NAME,mode=rw,boot=no" \
-	--metadata-from-file user-data="$CC"
+	--metadata-from-file user-data="$CC" \
+	${OLD_TAGS:+--tags "$OLD_TAGS"} \
+	${OLD_SCOPES:+--scopes "$OLD_SCOPES"} \
+	${OLD_SA:+--service-account "$OLD_SA"}
 
 say "Step 4/6: waiting for the new instance"
 # Tunable so the test harness does not wait five minutes for a mocked host.
