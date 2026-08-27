@@ -42,7 +42,8 @@ Write this cloud-config to your instance metadata:
 
 Then reboot so cloud-init applies it:
 
-    gcloud compute instances reset INSTANCE --zone ZONE
+    gcloud compute instances stop INSTANCE --zone ZONE
+    gcloud compute instances start INSTANCE --zone ZONE
 
 Verify afterwards:
 

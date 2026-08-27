@@ -152,11 +152,42 @@ If the migration finished, there is nothing to do. If you want to retire the old
 copy and create the symlink, do that directly:
 
     gcloud compute ssh $INSTANCE --zone $ZONE --command \\
-      'rm -rf ~/bitwarden_gcloud && ln -s $MOUNT/bitwarden_gcloud ~/bitwarden_gcloud'
+      'sudo rm -rf ~/bitwarden_gcloud && ln -s $MOUNT/bitwarden_gcloud ~/bitwarden_gcloud'
 
 To upgrade the OS milestone instead:
 
     ./upgrade-cos.sh --instance $INSTANCE --zone $ZONE
+EOF
+	exit 1
+fi
+
+# Everything from Step 1 onwards changes the instance. Step 2 backs the vault up
+# through the backup container, so check it can before anything moves.
+if ! on_vm 'docker ps --format "{{.Names}}" | grep -qx backup' >/dev/null 2>&1; then
+	cat >&2 <<EOF
+
+The backup container is not running, and Step 2 takes its backup through it.
+
+BACKUP ships commented out in .env.template, so a deployment that never turned
+backups on has the container present but exited. Enable it and bring the stack
+up, then run this script again:
+
+    cd ~/bitwarden_gcloud
+    grep -q '^BACKUP=' .env || echo 'BACKUP=local' >> .env
+    docker-compose up -d
+
+Nothing has been changed.
+EOF
+	exit 1
+fi
+if ! on_vm 'grep -qE "^BACKUP_ENCRYPTION_KEY=." ~/bitwarden_gcloud/.env' >/dev/null 2>&1; then
+	cat >&2 <<EOF
+
+BACKUP_ENCRYPTION_KEY is not set in ~/bitwarden_gcloud/.env.
+
+Step 2 verifies the backup by decrypting it, and the copy downloaded to this
+machine is encrypted with that key. It ships commented out. Set it, bring the
+stack up, and run this script again. Nothing has been changed.
 EOF
 	exit 1
 fi
@@ -175,17 +206,25 @@ on_vm 'cd ~/bitwarden_gcloud \
 # No blanket "|| true" either. It was there so an already-small log would not
 # abort the run, but it also swallowed a syntax error in this very command --
 # twice. The only tolerated failure is the log being absent.
+#
+# sudo truncate rather than ": >": PUID and PGID ship empty, so vaultwarden runs
+# as root and the log it writes is root-owned on a stock install. The vault is
+# stopped either side of this, so a failure here must restart it before exiting.
 on_vm '. ~/.bwgc-compose.sh; set -e; cd ~/bitwarden_gcloud; \
   if [ ! -f bitwarden/bitwarden.log ]; then echo "no vault log to clear"; exit 0; fi; \
   if [ ! -s bitwarden/bitwarden.log ]; then echo "vault log already empty"; exit 0; fi; \
-  ls -lh bitwarden/bitwarden.log; \
+  sudo ls -lh bitwarden/bitwarden.log; \
   compose stop bitwarden >/dev/null; \
-  : > bitwarden/bitwarden.log; \
+  if ! sudo truncate -s 0 bitwarden/bitwarden.log; then \
+    compose start bitwarden >/dev/null; \
+    echo "could not clear the vault log; vault restarted, nothing changed" >&2; \
+    exit 1; \
+  fi; \
   compose start bitwarden >/dev/null; \
   echo "vault log cleared"'
 
 say "Step 2/7: back up and verify"
-on_vm 'docker exec backup ash /backup.sh local,rclone'
+on_vm 'docker exec backup ash /backup.sh local'
 on_vm 'set -e; cd ~/bitwarden_gcloud; \
   LATEST=$(ls -t bitwarden/backups/*.aes256 2>/dev/null | head -1); \
   [ -n "$LATEST" ] || { echo "no backup produced" >&2; exit 1; }; \
@@ -347,7 +386,8 @@ on_vm "set -e; \
   else \
     printf '\n# Set by migrate-to-data-disk.sh. The stack is started by bwgc.service\n# once the data disk is mounted, not by the Docker daemon at boot.\nBWGC_RESTART_POLICY=no\n' | sudo tee -a $MOUNT/bitwarden_gcloud/.env >/dev/null; \
   fi; \
-  sudo grep '^BWGC_RESTART_POLICY=' $MOUNT/bitwarden_gcloud/.env"
+  sudo grep '^BWGC_RESTART_POLICY=' $MOUNT/bitwarden_gcloud/.env; \
+  sync"
 
 say "Step 5/7: record the layout in instance metadata"
 BACKUP_META=$(mktemp)
@@ -402,7 +442,13 @@ gcloud compute instances remove-metadata "$INSTANCE" --zone "$ZONE" --keys start
 
 say "Step 6/7: reboot and verify the mount returns"
 confirm "Reboot $INSTANCE now to prove the mount survives?"
-gcloud compute instances reset "$INSTANCE" --zone "$ZONE"
+# Flush again, then shut down rather than reset. "instances reset" is a power
+# cycle: it neither flushes page cache nor unmounts, so a file written seconds
+# earlier can reach the disk truncated, and the fsck in bootcmd then zero-fills
+# the tail. That corrupted .env on a real run.
+on_vm 'sync'
+gcloud compute instances stop "$INSTANCE" --zone "$ZONE"
+gcloud compute instances start "$INSTANCE" --zone "$ZONE"
 echo "waiting for the instance to come back..."
 # Tunable so the test harness does not wait five minutes for a mocked host.
 WAIT_TRIES="${BWGC_WAIT_TRIES:-30}"
@@ -426,11 +472,44 @@ lost, but the instance is not serving. Check the serial console:
 EOF
 	exit 1
 fi
+# ssh answers well before cloud-init mounts the disk, so poll the mount itself.
+printf 'waiting for cloud-init to mount %s' "$MOUNT"
+m=0
+while [ $m -lt "${BWGC_MOUNT_TRIES:-30}" ]; do
+	if on_vm "mountpoint -q $MOUNT" >/dev/null 2>&1; then
+		printf ' mounted\n'
+		break
+	fi
+	printf '.'
+	[ "$WAIT_SLEEP" -gt 0 ] && sleep "$WAIT_SLEEP"
+	m=$((m + 1))
+done
+if ! on_vm "mountpoint -q $MOUNT" >/dev/null 2>&1; then
+	cat >&2 <<EOF
+
+$MOUNT never mounted after the reboot.
+
+Your vault data is on $DISK_NAME and in the backup downloaded in Step 2, so
+nothing is lost. cloud-init did not mount the disk. Check what it did:
+
+    gcloud compute ssh $INSTANCE --zone $ZONE --command 'sudo cloud-init status --long; ls -l /dev/disk/by-id/google-$DISK_NAME'
+EOF
+	exit 1
+fi
+
 install_compose_helper
-on_vm "$COMPOSE_SRC set -e; echo '--- mount ---'; df -h $MOUNT; \
-  echo '--- timer ---'; systemctl list-timers cos-update-reboot.timer --no-pager | head -3; \
-  echo '--- starting the stack from its new home ---'; \
-  cd $MOUNT/bitwarden_gcloud && compose up -d; sleep 20; \
+on_vm "set -e; echo '--- mount ---'; df -h $MOUNT; \
+  echo '--- timer ---'; systemctl list-timers cos-update-reboot.timer --no-pager | head -3"
+# cloud-init starts the stack itself once the disk is mounted. Only start it
+# here if that did not happen, so the two do not race for the container names.
+on_vm "$COMPOSE_SRC set -e; \
+  if [ \"\$(systemctl is-active bwgc.service 2>/dev/null)\" = active ]; then \
+    echo 'stack started by bwgc.service'; \
+  else \
+    echo '--- starting the stack from its new home ---'; \
+    cd $MOUNT/bitwarden_gcloud && compose up -d; \
+  fi; \
+  sleep 20; \
   docker ps --format '{{.Names}}\t{{.Status}}'"
 
 say "Step 7/7: retire the old copy"
