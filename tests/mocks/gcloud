@@ -70,6 +70,11 @@ case "$1 $2" in
 		*tags.items*)              printf '%s\n' "${MOCK_TAGS-http-server;https-server}" ;;
 		*scopes*)                  printf '%s\n' "${MOCK_SCOPES-https://www.googleapis.com/auth/compute.readonly}" ;;
 		*serviceAccounts*email*)   printf '%s\n' "${MOCK_SA-123-compute@developer.gserviceaccount.com}" ;;
+		*labels*)                  printf '%s\n' "${MOCK_LABELS-env;prod}" ;;
+		*machineType*)             printf '%s\n' "${MOCK_MACHINE-e2-small}" ;;
+		*network.basename*)        printf '%s\n' "${MOCK_NETWORK-default}" ;;
+		*subnetwork*)              printf '%s\n' "${MOCK_SUBNET-default}" ;;
+		*natIP*)                   printf '%s\n' "${MOCK_NATIP-35.1.2.3}" ;;
 		*status*)                  printf 'RUNNING\n' ;;
 		*)                         printf '\n' ;;
 		esac
@@ -81,6 +86,10 @@ case "$1 $2" in
 	case "$3" in
 	describe) [ "${MOCK_DISK_EXISTS:-0}" = "1" ] || exit 1 ;;
 	esac
+	exit 0
+	;;
+"compute addresses")
+	[ "$3" = list ] && printf '%s\n' "${MOCK_RESERVED_NAME-vault-static-ip}"
 	exit 0
 	;;
 *) exit 0 ;;

@@ -15,6 +15,7 @@ set -eu
 DISK_NAME=bwgc-data
 MOUNT=/mnt/disks/bwgc
 BOOT_SIZE=10GB
+MACHINE_TYPE=e2-micro
 BOOT_DISK_NAME=
 REBOOT_TIME=06:00
 INSTANCE=
@@ -227,22 +228,67 @@ else
 	confirm "Continue without a local copy?"
 fi
 
-# Read the old instance's tags and scopes before deleting it. Neither is
-# implied by the image or the disks: without the tags the firewall rules, which
-# target http-server and https-server, do not apply and the vault is
-# unreachable from the internet. Without compute-ro the instance cannot check
-# whether its own milestone is still supported.
-OLD_TAGS=$(gcloud compute instances describe "$INSTANCE" --zone "$ZONE" \
-	--format="value(tags.items.list())" 2>/dev/null | tr -d ' ' | tr ';' ',' || true)
-OLD_SCOPES=$(gcloud compute instances describe "$INSTANCE" --zone "$ZONE" \
-	--format="value(serviceAccounts[0].scopes.list())" 2>/dev/null | tr -d ' ' | tr ';' ',' || true)
-OLD_SA=$(gcloud compute instances describe "$INSTANCE" --zone "$ZONE" \
-	--format="value(serviceAccounts[0].email)" 2>/dev/null | tr -d ' ' || true)
-echo "carrying over: tags=${OLD_TAGS:-none} scopes=${OLD_SCOPES:-default} service-account=${OLD_SA:-default}"
+# Everything the replacement needs that is not implied by the image or the
+# disks. Deleting the old instance destroys all of it, so it is captured first
+# and a full copy is saved locally as the record of what was there.
+INSTANCE_SNAPSHOT="$LOCAL_BACKUP_DIR/instance-$INSTANCE.json"
+gcloud compute instances describe "$INSTANCE" --zone "$ZONE" --format=json \
+	> "$INSTANCE_SNAPSHOT" 2>/dev/null || true
+[ -s "$INSTANCE_SNAPSHOT" ] && echo "instance configuration saved to $INSTANCE_SNAPSHOT"
+
+_field() {
+	gcloud compute instances describe "$INSTANCE" --zone "$ZONE" \
+		--format="value($1)" 2>/dev/null | tr -d ' ' | tr ';' ',' || true
+}
+
+# gcloud's .list() joins with semicolons; --tags, --scopes and --labels take
+# commas.
+OLD_TAGS=$(_field "tags.items.list()")
+OLD_SCOPES=$(_field "serviceAccounts[0].scopes.list()")
+OLD_SA=$(_field "serviceAccounts[0].email")
+OLD_LABELS=$(_field "labels.list()")
+OLD_MACHINE=$(_field "machineType.basename()")
+OLD_NETWORK=$(_field "networkInterfaces[0].network.basename()")
+OLD_SUBNET=$(_field "networkInterfaces[0].subnetwork.basename()")
+OLD_NATIP=$(_field "networkInterfaces[0].accessConfigs[0].natIP")
+
+# The machine type is not hardcoded: an instance that was resized would
+# otherwise be silently put back to e2-micro.
+if [ -n "$OLD_MACHINE" ] && [ "$OLD_MACHINE" != "$MACHINE_TYPE" ]; then
+	echo "keeping the current machine type: $OLD_MACHINE"
+	MACHINE_TYPE=$OLD_MACHINE
+fi
+
+echo "carrying over:"
+echo "  machine type     ${MACHINE_TYPE}"
+echo "  tags             ${OLD_TAGS:-none}"
+echo "  scopes           ${OLD_SCOPES:-default}"
+echo "  service account  ${OLD_SA:-default}"
+echo "  labels           ${OLD_LABELS:-none}"
+echo "  network          ${OLD_NETWORK:-default}/${OLD_SUBNET:-default}"
+
 if [ -z "$OLD_TAGS" ]; then
-	echo "WARNING: the current instance has no network tags. If your firewall rules" >&2
-	echo "target tags, the replacement will be unreachable. Check before continuing." >&2
+	echo "" >&2
+	echo "WARNING: this instance has no network tags. The firewall rules this" >&2
+	echo "project creates target http-server and https-server, so a replacement" >&2
+	echo "without them serves only on localhost." >&2
 	confirm "Continue with no network tags?"
+fi
+
+# A reserved address survives instance deletion; an ephemeral one does not.
+if [ -n "$OLD_NATIP" ]; then
+	IP_KIND=$(gcloud compute addresses list --filter="address=$OLD_NATIP" \
+		--format="value(name)" 2>/dev/null | head -1 || true)
+	if [ -n "$IP_KIND" ]; then
+		echo "  external IP      $OLD_NATIP (reserved as '$IP_KIND', will be reattachable)"
+		RESERVED_IP=$IP_KIND
+	else
+		echo "" >&2
+		echo "NOTE: $OLD_NATIP is ephemeral and is released when this instance is" >&2
+		echo "deleted. The replacement gets a different address. The ddns container" >&2
+		echo "updates DNS on startup, so this is usually fine -- but anything else" >&2
+		echo "pinned to that address will need updating." >&2
+	fi
 fi
 
 say "Step 2/6: stop the stack and release the data disk"
@@ -286,7 +332,7 @@ CC=$(mktemp)
 emit_cloud_config "$DISK_NAME" "$MOUNT" "$REBOOT_TIME" > "$CC"
 gcloud compute instances create "$NEW_INSTANCE" \
 	--zone "$ZONE" \
-	--machine-type e2-micro \
+	--machine-type "$MACHINE_TYPE" \
 	--image-family "$IMAGE_FAMILY" \
 	--image-project cos-cloud \
 	--boot-disk-size "$BOOT_SIZE" \
@@ -296,7 +342,11 @@ gcloud compute instances create "$NEW_INSTANCE" \
 	--metadata-from-file user-data="$CC" \
 	${OLD_TAGS:+--tags "$OLD_TAGS"} \
 	${OLD_SCOPES:+--scopes "$OLD_SCOPES"} \
-	${OLD_SA:+--service-account "$OLD_SA"}
+	${OLD_SA:+--service-account "$OLD_SA"} \
+	${OLD_LABELS:+--labels "$OLD_LABELS"} \
+	${OLD_NETWORK:+--network "$OLD_NETWORK"} \
+	${OLD_SUBNET:+--subnet "$OLD_SUBNET"} \
+	${RESERVED_IP:+--address "$RESERVED_IP"}
 
 say "Step 4/6: waiting for the new instance"
 # Tunable so the test harness does not wait five minutes for a mocked host.

@@ -123,3 +123,27 @@ assert_contains "$create" "--scopes"          "carries service account scopes"
 assert_contains "$create" "compute.readonly"  "keeps the scope the milestone check needs"
 assert_contains "$create" "--service-account" "carries the service account"
 assert_not_contains "$create" "http-server;"  "no semicolon separator reaches gcloud"
+assert_contains "$create" "--labels"          "carries labels"
+assert_contains "$create" "--network"         "carries the network"
+assert_contains "$create" "--subnet"          "carries the subnet"
+
+# A resized instance must not be silently put back to e2-micro.
+assert_contains "$create" "e2-small"          "keeps the machine type rather than hardcoding e2-micro"
+assert_not_contains "$create" "e2-micro"      "does not force e2-micro over the existing type"
+
+# A reserved address survives deletion and should be reattached; an ephemeral
+# one cannot be, and the operator is told.
+assert_contains "$create" "--address"         "reattaches a reserved external address"
+assert_contains "$(cat "$ROOT/utilities/upgrade-cos.sh")" "is ephemeral and is released" \
+  "warns when the external address cannot be carried over"
+
+# Deleting the instance destroys everything not captured first.
+assert_contains "$(cat "$ROOT/utilities/upgrade-cos.sh")" "instance-\$INSTANCE.json" \
+  "saves the full instance configuration before deleting it"
+snap=$(grep -n 'instances describe .* --format=json' "$ROOT/utilities/upgrade-cos.sh" | head -1 | cut -d: -f1)
+del=$(grep -n 'instances delete' "$ROOT/utilities/upgrade-cos.sh" | head -1 | cut -d: -f1)
+if [ -n "$snap" ] && [ -n "$del" ] && [ "$snap" -lt "$del" ]; then
+	pass "the configuration snapshot precedes the deletion"
+else
+	fail "the configuration snapshot precedes the deletion" "snapshot=$snap delete=$del"
+fi
