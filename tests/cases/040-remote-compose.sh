@@ -89,3 +89,25 @@ assert_contains "$mig" "docker pull -q docker:cli" "restores the compose image t
 assert_contains "$mig" "already matches what this script would write" "skips the metadata prompt when nothing changes"
 assert_contains "$mig" 'ln -s $MOUNT/bitwarden_gcloud' "symlinks the familiar path to the data disk"
 assert_contains "$mig" "gcloud compute scp" "downloads the backup before removing the old copy"
+
+# The backup must reach the operator's machine before anything destructive
+# happens. Between the backup and the end of the run the script stops
+# containers, formats a disk and reboots the instance.
+scp_line=$(grep -n 'gcloud compute scp' "$ROOT/utilities/migrate-to-data-disk.sh" | head -1 | cut -d: -f1)
+for danger in 'compose down' 'mkfs.ext4' 'instances reset' 'rm -rf ~/bitwarden_gcloud'; do
+	d_line=$(grep -nF "$danger" "$ROOT/utilities/migrate-to-data-disk.sh" | head -1 | cut -d: -f1)
+	if [ -n "$d_line" ] && [ "$scp_line" -lt "$d_line" ]; then
+		pass "backup is downloaded before: $danger"
+	else
+		fail "backup is downloaded before: $danger" "scp at $scp_line, $danger at ${d_line:-none}"
+	fi
+done
+
+# Same property in the upgrade script.
+up_scp=$(grep -n 'gcloud compute scp' "$ROOT/utilities/upgrade-cos.sh" | head -1 | cut -d: -f1)
+up_del=$(grep -n 'instances delete' "$ROOT/utilities/upgrade-cos.sh" | head -1 | cut -d: -f1)
+if [ -n "$up_scp" ] && [ -n "$up_del" ] && [ "$up_scp" -lt "$up_del" ]; then
+	pass "upgrade downloads the backup before deleting the instance"
+else
+	fail "upgrade downloads the backup before deleting the instance" "scp=$up_scp delete=$up_del"
+fi

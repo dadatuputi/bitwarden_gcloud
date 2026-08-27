@@ -166,6 +166,27 @@ on_vm 'set -e; cd ~/bitwarden_gcloud; \
     | tar tzf - | grep -qx db.sqlite3" \
   && echo "BACKUP_VERIFIED: archive decrypts and contains db.sqlite3"'
 
+# Pull it down now, not later. Everything from here stops containers, formats a
+# disk and reboots the instance; a backup that exists only on that instance is
+# not a backup during any of it.
+LOCAL_BACKUP_DIR="${PWD}/bwgc-backups"
+mkdir -p "$LOCAL_BACKUP_DIR"
+REMOTE_BACKUP=$(on_vm 'ls -t ~/bitwarden_gcloud/bitwarden/backups/*.aes256 2>/dev/null | head -1' | tr -d '\r')
+if [ -n "$REMOTE_BACKUP" ]; then
+	gcloud compute scp "$INSTANCE:$REMOTE_BACKUP" "$LOCAL_BACKUP_DIR/" --zone "$ZONE"
+	LOCAL_COPY="$LOCAL_BACKUP_DIR/$(basename "$REMOTE_BACKUP")"
+	if [ -s "$LOCAL_COPY" ]; then
+		echo "backup downloaded: $LOCAL_COPY ($(du -h "$LOCAL_COPY" | cut -f1))"
+		echo "Encrypted with BACKUP_ENCRYPTION_KEY. Keep that key somewhere else."
+	else
+		echo "The download produced nothing usable." >&2
+		confirm "Continue with the backup only on the instance?"
+	fi
+else
+	echo "Could not find the backup that was just created." >&2
+	confirm "Continue with no local copy?"
+fi
+
 # Size against what the vault actually holds.
 #
 #   within HEADROOM of filling the default size?
@@ -377,26 +398,14 @@ cat <<EOF
 The vault is running from $MOUNT/bitwarden_gcloud. The copy at
 ~/bitwarden_gcloud is now redundant and holds ${OLD_SIZE:-unknown}.
 
-Before removing it, the verified backup is downloaded to this Cloud Shell
-session, so a copy exists off the instance.
-EOF
+The backup taken in Step 2 was downloaded to this session:
 
-LOCAL_BACKUP_DIR="${PWD}/bwgc-backups"
-mkdir -p "$LOCAL_BACKUP_DIR"
-REMOTE_BACKUP=$(on_vm "ls -t $MOUNT/bitwarden_gcloud/bitwarden/backups/*.aes256 2>/dev/null | head -1" | tr -d '\r')
-if [ -n "$REMOTE_BACKUP" ]; then
-	gcloud compute scp "$INSTANCE:$REMOTE_BACKUP" "$LOCAL_BACKUP_DIR/" --zone "$ZONE"
-	LOCAL_COPY="$LOCAL_BACKUP_DIR/$(basename "$REMOTE_BACKUP")"
-	if [ -s "$LOCAL_COPY" ]; then
-		echo "downloaded $(du -h "$LOCAL_COPY" | cut -f1) to $LOCAL_COPY"
-		echo "It is encrypted with BACKUP_ENCRYPTION_KEY. Keep that key somewhere else."
-	else
-		echo "The download produced nothing usable." >&2
-		confirm "Continue without a local copy?"
-	fi
+EOF
+if [ -n "${LOCAL_COPY:-}" ] && [ -s "$LOCAL_COPY" ]; then
+	echo "  $LOCAL_COPY ($(du -h "$LOCAL_COPY" | cut -f1))"
 else
-	echo "No backup found on the data disk." >&2
-	confirm "Continue without a local copy?"
+	echo "  no local copy was downloaded earlier" >&2
+	confirm "Remove the old copy anyway?"
 fi
 
 cat <<EOF
