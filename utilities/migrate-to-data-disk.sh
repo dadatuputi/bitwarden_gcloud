@@ -13,7 +13,8 @@
 set -eu
 
 DISK_NAME=bwgc-data
-DISK_SIZE=15GB
+DEFAULT_DATA_GB=15
+DISK_SIZE="${DEFAULT_DATA_GB}GB"
 MOUNT=/mnt/disks/bwgc
 REBOOT_TIME=06:00
 INSTANCE=
@@ -32,13 +33,7 @@ Usage: $0 --instance NAME --zone ZONE [options]
   --instance NAME     the instance running bitwarden_gcloud (required)
   --zone ZONE         its zone, e.g. us-central1-a (required)
   --disk-name NAME    data disk to create (default: $DISK_NAME)
-  --disk-size SIZE    default: $DISK_SIZE. The free tier covers 30GB of
-                      pd-standard total; 15GB here leaves room for the boot
-                      disk with margin. Larger values may bill.
-                      20GB suits vaults with file attachments. Upgrades delete
-                      the old boot disk before creating the new one, so only
-                      one boot disk exists at a time and 10+20 stays at the
-                      30 GB free allowance.
+  --disk-size SIZE    override the automatic size (default: $DISK_SIZE)
   --mount PATH        where to mount it (default: $MOUNT)
   --reboot-time HH:MM daily window for OS update reboots (default: $REBOOT_TIME)
   --print-cloud-config  print the generated cloud-config and exit
@@ -46,9 +41,12 @@ Usage: $0 --instance NAME --zone ZONE [options]
   --force             size the disk past the free tier anyway, accepting the
                       charge
 
-Free tier note: pd-standard only, 30 GB total. A 10 GB boot disk plus a 20 GB
-data disk is exactly 30 GB. upgrade-cos.sh deletes the old boot disk before
-creating its replacement, so a second boot disk never coexists with the first.
+Sizing is automatic. The vault is measured, and if it comes within 3GB of
+filling the default the disk is expanded to whatever the free tier allows
+beside the boot disk -- with a warning, because that consumes the margin. If
+even that will not hold it, the script stops and points at --force.
+
+Free tier: 30GB of pd-standard total, and only pd-standard is free.
 EOF
 }
 
@@ -125,11 +123,18 @@ on_vm 'set -e; cd ~/bitwarden_gcloud; \
 
 # Size against what the vault actually holds.
 #
-# The free tier covers 30 GB of pd-standard. The boot disk takes whatever the
-# COS image declares -- 10 GB for every milestone since 2019 -- so 20 GB is the
-# largest data disk that still fits, and 15 GB leaves a margin for the boot disk
-# growing later.
-if [ "$DISK_SIZE" = 15GB ]; then
+#   within HEADROOM of filling the default size?
+#     no  -> use the default
+#     yes -> is there room to expand?
+#              yes -> expand, with a warning about the margin that is gone
+#              no  -> stop, and offer --force
+#
+# The ceiling is what the free tier leaves after the boot disk, so it moves on
+# its own if a COS milestone ever declares a larger minimum.
+FREE_TIER_GB=30
+HEADROOM_GB=3
+
+if [ "$DISK_SIZE" = "${DEFAULT_DATA_GB}GB" ]; then
 	PAYLOAD_MB=$(on_vm 'du -sm --exclude=backups ~/bitwarden_gcloud 2>/dev/null | cut -f1' | tr -d '\r')
 	[ -n "$PAYLOAD_MB" ] || PAYLOAD_MB=0
 	PAYLOAD_GB=$(( (PAYLOAD_MB + 1023) / 1024 ))
@@ -137,47 +142,43 @@ if [ "$DISK_SIZE" = 15GB ]; then
 	BOOT_MIN=$(gcloud compute images describe-from-family cos-129-lts \
 		--project cos-cloud --format="value(diskSizeGb)" 2>/dev/null || echo 10)
 	[ -n "$BOOT_MIN" ] || BOOT_MIN=10
+	MAX_DATA_GB=$(( FREE_TIER_GB - BOOT_MIN ))
 
-	if [ "$PAYLOAD_GB" -ge 16 ]; then
-		cat >&2 <<EOF
+	TARGET_GB=$DEFAULT_DATA_GB
+	if [ $(( PAYLOAD_GB + HEADROOM_GB )) -ge "$TARGET_GB" ]; then
+		# Within HEADROOM of the default. Room to expand?
+		if [ $(( PAYLOAD_GB + HEADROOM_GB )) -le "$MAX_DATA_GB" ]; then
+			TARGET_GB=$MAX_DATA_GB
+			cat <<EOF
 
-Your vault is ${PAYLOAD_GB} GB, excluding local backups.
+Vault is ${PAYLOAD_GB} GB, within ${HEADROOM_GB} GB of filling a ${DEFAULT_DATA_GB} GB disk.
+Expanding the data disk to ${TARGET_GB} GB.
 
-A data disk large enough for it, plus a ${BOOT_MIN} GB boot disk, exceeds the
-30 GB of pd-standard the free tier covers. There is no size that both holds
-your data and stays free.
+WARNING: ${TARGET_GB} GB of data plus a ${BOOT_MIN} GB boot disk is the whole
+${FREE_TIER_GB} GB free tier allowance, with nothing spare. A later COS
+milestone needing a larger boot disk would no longer fit, and persistent disks
+cannot be shrunk -- moving to a smaller one means creating it and restoring
+onto it.
+EOF
+			confirm "Use a ${TARGET_GB} GB data disk?"
+		else
+			cat >&2 <<EOF
+
+STOPPING: vault is ${PAYLOAD_GB} GB, and no data disk both holds it and stays free.
+
+The largest that fits alongside a ${BOOT_MIN} GB boot disk is ${MAX_DATA_GB} GB,
+which leaves less than the ${HEADROOM_GB} GB of headroom this script requires.
 
 Re-run with --force --disk-size <size> to proceed and accept the charge.
 Standard persistent disk is about \$0.04 per GB per month.
 EOF
-		[ "$FORCE" -eq 1 ] || exit 1
-		echo "--force given: continuing at $DISK_SIZE" >&2
-	elif [ "$PAYLOAD_GB" -ge 12 ]; then
-		if [ "$BOOT_MIN" -le 10 ]; then
-			DISK_SIZE=20GB
-			cat <<EOF
-
-Your vault is ${PAYLOAD_GB} GB, close to the 15 GB default. Sizing the data
-disk at 20 GB instead.
-
-WARNING: 20 GB of data plus a ${BOOT_MIN} GB boot disk is exactly the 30 GB free
-tier allowance, with nothing spare. If a future COS milestone needs a larger
-boot disk, that no longer fits, and persistent disks cannot be shrunk -- moving
-to a smaller data disk means creating one and restoring onto it.
-EOF
-			confirm "Use a 20 GB data disk?"
-		else
-			cat >&2 <<EOF
-
-Your vault is ${PAYLOAD_GB} GB and the current COS image needs a ${BOOT_MIN} GB
-boot disk, so 20 GB of data no longer fits inside the 30 GB free tier.
-
-Re-run with --force --disk-size <size> to proceed and accept the charge.
-EOF
 			[ "$FORCE" -eq 1 ] || exit 1
+			TARGET_GB=$MAX_DATA_GB
+			echo "--force given: continuing at ${TARGET_GB} GB" >&2
 		fi
 	fi
-	echo "Vault is ${PAYLOAD_GB} GB; data disk will be $DISK_SIZE."
+	DISK_SIZE="${TARGET_GB}GB"
+	echo "Vault is ${PAYLOAD_GB} GB; data disk will be ${DISK_SIZE} (boot ${BOOT_MIN} GB, free tier ${FREE_TIER_GB} GB)."
 fi
 
 say "Step 3/6: create and attach the data disk"
