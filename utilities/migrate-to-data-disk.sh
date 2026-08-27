@@ -77,7 +77,32 @@ command -v gcloud >/dev/null 2>&1 || { echo "gcloud not found. Run this from Clo
 # compose on these instances is a shell alias in ~/.bash_alias, which a
 # non-interactive ssh command never sources. Every remote command that needs
 # compose carries this definition instead of relying on the caller's shell.
-COMPOSE_FN='compose() { if docker compose version >/dev/null 2>&1; then docker compose "$@"; else docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:$PWD" -w="$PWD" --entrypoint docker docker:cli compose "$@"; fi; }'
+# docker-compose on these instances is a shell alias in ~/.bash_alias, which a
+# non-interactive ssh command never sources. The definition is written to the
+# instance once and sourced by each remote command that needs it. Carrying it
+# inline instead means nesting quotes inside quotes at every call site.
+COMPOSE_HELPER=/tmp/bwgc-compose.sh
+COMPOSE_SRC=". $COMPOSE_HELPER;"
+
+# Heredoc body is quoted, so nothing in it is expanded locally.
+compose_helper_body() {
+	cat <<'BWGCEOF'
+compose() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "$@"
+  else
+    docker run --rm \
+      -v /var/run/docker.sock:/var/run/docker.sock \
+      -v "$PWD:$PWD" -w="$PWD" \
+      --entrypoint docker docker:cli compose "$@"
+  fi
+}
+BWGCEOF
+}
+install_compose_helper() {
+	compose_helper_body | gcloud compute ssh "$INSTANCE" --zone "$ZONE" \
+		--command "cat > $COMPOSE_HELPER" >/dev/null
+}
 
 say() { printf '\n=== %s\n' "$1"; }
 on_vm() { gcloud compute ssh "$INSTANCE" --zone "$ZONE" --command "$1"; }
@@ -108,7 +133,7 @@ on_vm 'cd ~/bitwarden_gcloud \
   && docker image prune -af >/dev/null 2>&1 || true; \
   docker builder prune -af >/dev/null 2>&1 || true; \
   echo "--- after ---"; docker system df'
-on_vm "$COMPOSE_FN; cd ~/bitwarden_gcloud \
+on_vm "$COMPOSE_SRC cd ~/bitwarden_gcloud \
   && if [ -s bitwarden/bitwarden.log ]; then \
        ls -lh bitwarden/bitwarden.log; \
        compose stop bitwarden >/dev/null 2>&1 || true; \
@@ -211,11 +236,30 @@ on_vm "set -e; DEV=/dev/disk/by-id/google-$DISK_NAME; \
   sudo mkdir -p $MOUNT; \
   mountpoint -q $MOUNT || sudo mount -t ext4 -o discard,defaults \$DEV $MOUNT; \
   sudo chown \$(id -u):\$(id -g) $MOUNT"
-on_vm "$COMPOSE_FN; set -e; cd ~/bitwarden_gcloud && compose down; \
+# The vault is stopped for the copy, so a failure here leaves it down. Bring it
+# back up at the old location and abort rather than exiting with the service
+# offline.
+#
+# rsync runs under sudo: the containers write as root, so attachments, the RSA
+# keys and Caddy's certificate store are not readable by the invoking user.
+# -a preserves ownership, which vaultwarden expects to be unchanged.
+if ! on_vm "$COMPOSE_SRC set -e; cd ~/bitwarden_gcloud && compose down; \
   echo 'copying deployment (excluding local backups, which are already offsite)'; \
-  rsync -a --delete --exclude 'bitwarden/backups/' ~/bitwarden_gcloud/ $MOUNT/bitwarden_gcloud/; \
-  mkdir -p $MOUNT/bitwarden_gcloud/bitwarden/backups; \
-  du -sh $MOUNT/bitwarden_gcloud"
+  sudo rsync -a --delete --exclude 'bitwarden/backups/' ~/bitwarden_gcloud/ $MOUNT/bitwarden_gcloud/; \
+  sudo mkdir -p $MOUNT/bitwarden_gcloud/bitwarden/backups; \
+  sudo du -sh $MOUNT/bitwarden_gcloud"; then
+	cat >&2 <<EOF
+
+The copy failed. Restarting the vault at its original location so it is not
+left offline, then stopping.
+
+Nothing on the data disk is trusted after a partial copy. Re-running this
+script starts the copy again from scratch.
+EOF
+	on_vm "$COMPOSE_SRC cd ~/bitwarden_gcloud && compose up -d" || \
+		echo "Could not restart the vault automatically. Do it by hand: cd ~/bitwarden_gcloud && docker-compose up -d" >&2
+	exit 1
+fi
 
 say "Step 5/6: record the layout in instance metadata"
 BACKUP_META=$(mktemp)
@@ -246,7 +290,7 @@ while [ $i -lt "$WAIT_TRIES" ]; do
 	if on_vm 'true' >/dev/null 2>&1; then break; fi
 	i=$((i + 1))
 done
-on_vm "$COMPOSE_FN; set -e; echo '--- mount ---'; df -h $MOUNT; \
+on_vm "$COMPOSE_SRC set -e; echo '--- mount ---'; df -h $MOUNT; \
   echo '--- timer ---'; systemctl list-timers cos-update-reboot.timer --no-pager | head -3; \
   echo '--- starting the stack from its new home ---'; \
   cd $MOUNT/bitwarden_gcloud && compose up -d; sleep 20; \
