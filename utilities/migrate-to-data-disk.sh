@@ -93,7 +93,7 @@ compose() {
   else
     docker run --rm \
       -v /var/run/docker.sock:/var/run/docker.sock \
-      -v "$PWD:$PWD" -w="$PWD" \
+      -v "$(pwd -P):$(pwd -P)" -w="$(pwd -P)" \
       --entrypoint docker docker:cli compose "$@"
   fi
 }
@@ -114,6 +114,15 @@ confirm() {
 	case "$reply" in y|Y|yes|YES) return 0 ;; *) echo "aborted."; exit 1 ;; esac
 }
 
+# Same, but proceeding is the default. Used where stopping is the unusual
+# choice and the change has already been shown in full.
+confirm_default_yes() {
+	[ "$ASSUME_YES" -eq 1 ] && return 0
+	printf '%s [Y/n] ' "$1"
+	read -r reply
+	case "$reply" in n|N|no|NO) echo "aborted."; exit 1 ;; *) return 0 ;; esac
+}
+
 REPO_DIR=$(on_vm 'cd ~/bitwarden_gcloud >/dev/null 2>&1 && pwd' || true)
 [ -n "$REPO_DIR" ] || { echo "could not find ~/bitwarden_gcloud on $INSTANCE" >&2; exit 1; }
 
@@ -129,12 +138,14 @@ confirm "Proceed?"
 
 install_compose_helper
 
-say "Step 1/6: reclaim space before copying"
+say "Step 1/7: reclaim space before copying"
 on_vm 'cd ~/bitwarden_gcloud \
   && echo "--- before ---" && docker system df \
   && docker image prune -af >/dev/null 2>&1 || true; \
   docker builder prune -af >/dev/null 2>&1 || true; \
-  echo "--- after ---"; docker system df'
+  echo "--- after ---"; docker system df; \
+  echo "--- restoring the docker:cli image the prune removed ---"; \
+  docker pull -q docker:cli >/dev/null 2>&1 || true'
 on_vm "$COMPOSE_SRC cd ~/bitwarden_gcloud \
   && if [ -s bitwarden/bitwarden.log ]; then \
        ls -lh bitwarden/bitwarden.log; \
@@ -144,7 +155,7 @@ on_vm "$COMPOSE_SRC cd ~/bitwarden_gcloud \
        echo "vault log cleared"; \
      else echo 'vault log already small'; fi" || true
 
-say "Step 2/6: back up and verify"
+say "Step 2/7: back up and verify"
 on_vm 'docker exec backup ash /backup.sh local,rclone'
 on_vm 'set -e; cd ~/bitwarden_gcloud; \
   LATEST=$(ls -t bitwarden/backups/*.aes256 2>/dev/null | head -1); \
@@ -215,7 +226,7 @@ EOF
 	echo "Vault is ${PAYLOAD_GB} GB; data disk will be ${DISK_SIZE} (boot ${BOOT_MIN} GB, free tier ${FREE_TIER_GB} GB)."
 fi
 
-say "Step 3/6: create and attach the data disk"
+say "Step 3/7: create and attach the data disk"
 if gcloud compute disks describe "$DISK_NAME" --zone "$ZONE" >/dev/null 2>&1; then
 	echo "disk $DISK_NAME already exists, reusing"
 else
@@ -229,7 +240,7 @@ else
 		--disk "$DISK_NAME" --device-name "$DISK_NAME" --zone "$ZONE"
 fi
 
-say "Step 4/6: format and copy the deployment"
+say "Step 4/7: format and copy the deployment"
 on_vm "set -e; DEV=/dev/disk/by-id/google-$DISK_NAME; \
   if ! sudo blkid \$DEV >/dev/null 2>&1; then \
     echo 'formatting ext4'; \
@@ -274,23 +285,58 @@ EOF
 	exit 1
 fi
 
-say "Step 5/6: record the layout in instance metadata"
+say "Step 5/7: record the layout in instance metadata"
 BACKUP_META=$(mktemp)
 gcloud compute instances describe "$INSTANCE" --zone "$ZONE" \
 	--format="value(metadata.items.filter(\"key:user-data\").extract(value))" > "$BACKUP_META" 2>/dev/null || true
-if [ -s "$BACKUP_META" ]; then
-	echo "existing user-data saved to $BACKUP_META"
-	confirm "Replace the existing user-data metadata?"
-fi
 CC=$(mktemp)
 emit_cloud_config "$DISK_NAME" "$MOUNT" "$REBOOT_TIME" > "$CC"
+
+# On Container-Optimized OS, /etc is tmpfs. A mount written to /etc/fstab or a
+# unit written to /etc/systemd/system is gone after the next reboot, so the disk
+# mount and the update timer are declared in instance metadata instead, which
+# cloud-init reapplies on every boot. Writing this key is how the data disk gets
+# mounted at all -- without it the vault starts against an empty directory.
+if [ -s "$BACKUP_META" ] && cmp -s "$BACKUP_META" "$CC"; then
+	echo "user-data metadata already matches what this script would write; leaving it alone."
+elif [ -s "$BACKUP_META" ]; then
+	cat <<EOF
+
+This instance already has user-data metadata. It will be replaced.
+
+--- currently set -------------------------------------------------------
+EOF
+	sed 's/^/  /' "$BACKUP_META"
+	cat <<EOF
+--- proposed ------------------------------------------------------------
+EOF
+	sed 's/^/  /' "$CC"
+	echo "-------------------------------------------------------------------------"
+	if command -v diff >/dev/null 2>&1; then
+		echo
+		echo "Changes:"
+		diff -u "$BACKUP_META" "$CC" | sed -n '3,$p' | sed 's/^/  /' || true
+	fi
+	cat <<EOF
+
+The current value is saved to:
+  $BACKUP_META
+
+Keep a copy elsewhere if you have hand-edited it -- that path is temporary.
+EOF
+	confirm_default_yes "Replace the user-data metadata?"
+else
+	echo "No existing user-data metadata; the generated cloud-config will be set."
+	echo
+	sed 's/^/  /' "$CC"
+fi
 gcloud compute instances add-metadata "$INSTANCE" --zone "$ZONE" \
 	--metadata-from-file user-data="$CC"
 echo "cloud-config applied. /etc is tmpfs on COS, so this is what reapplies it every boot."
 gcloud compute instances remove-metadata "$INSTANCE" --zone "$ZONE" --keys startup-script >/dev/null 2>&1 \
 	&& echo "removed the legacy startup-script reboot watcher, now handled by the timer" || true
 
-say "Step 6/6: reboot and verify the mount returns"
+say "Step 6/7: reboot and verify the mount returns"
 confirm "Reboot $INSTANCE now to prove the mount survives?"
 gcloud compute instances reset "$INSTANCE" --zone "$ZONE"
 echo "waiting for the instance to come back..."
@@ -323,13 +369,78 @@ on_vm "$COMPOSE_SRC set -e; echo '--- mount ---'; df -h $MOUNT; \
   cd $MOUNT/bitwarden_gcloud && compose up -d; sleep 20; \
   docker ps --format '{{.Names}}\t{{.Status}}'"
 
+say "Step 7/7: retire the old copy"
+
+OLD_SIZE=$(on_vm "sudo du -sh ~/bitwarden_gcloud 2>/dev/null | cut -f1" | tr -d '\r')
+cat <<EOF
+
+The vault is running from $MOUNT/bitwarden_gcloud. The copy at
+~/bitwarden_gcloud is now redundant and holds ${OLD_SIZE:-unknown}.
+
+Before removing it, the verified backup is downloaded to this Cloud Shell
+session, so a copy exists off the instance.
+EOF
+
+LOCAL_BACKUP_DIR="${PWD}/bwgc-backups"
+mkdir -p "$LOCAL_BACKUP_DIR"
+REMOTE_BACKUP=$(on_vm "ls -t $MOUNT/bitwarden_gcloud/bitwarden/backups/*.aes256 2>/dev/null | head -1" | tr -d '\r')
+if [ -n "$REMOTE_BACKUP" ]; then
+	gcloud compute scp "$INSTANCE:$REMOTE_BACKUP" "$LOCAL_BACKUP_DIR/" --zone "$ZONE"
+	LOCAL_COPY="$LOCAL_BACKUP_DIR/$(basename "$REMOTE_BACKUP")"
+	if [ -s "$LOCAL_COPY" ]; then
+		echo "downloaded $(du -h "$LOCAL_COPY" | cut -f1) to $LOCAL_COPY"
+		echo "It is encrypted with BACKUP_ENCRYPTION_KEY. Keep that key somewhere else."
+	else
+		echo "The download produced nothing usable." >&2
+		confirm "Continue without a local copy?"
+	fi
+else
+	echo "No backup found on the data disk." >&2
+	confirm "Continue without a local copy?"
+fi
+
+cat <<EOF
+
+Removing ~/bitwarden_gcloud and replacing it with a symlink to the data disk,
+so the familiar path keeps working:
+
+    ~/bitwarden_gcloud -> $MOUNT/bitwarden_gcloud
+
+EOF
+confirm_default_yes "Remove the old copy and create the symlink?"
+on_vm "set -e; rm -rf ~/bitwarden_gcloud; ln -s $MOUNT/bitwarden_gcloud ~/bitwarden_gcloud; ls -ld ~/bitwarden_gcloud"
+
+# Anything else left over is reported rather than removed. It is not this
+# script's to delete.
+STRAY=$(on_vm "for d in ~/data ~/refresh-safety; do [ -e \"\$d\" ] && printf '  %s  %s\n' \"\$(sudo du -sh \$d 2>/dev/null | cut -f1)\" \"\$d\"; done" | tr -d '\r')
+if [ -n "$STRAY" ]; then
+	cat <<EOF
+
+Other directories are still in the home directory. This script did not create
+them and will not remove them:
+
+$STRAY
+
+~/data is usually a relic of an earlier data-disk attempt. Check before deleting.
+EOF
+fi
+
 say "Done"
 cat <<EOF
-  The deployment now lives at $MOUNT/bitwarden_gcloud on disk $DISK_NAME.
-  The copy under ~/bitwarden_gcloud is still there. Verify the vault from a
-  real client, then remove it:
+  The vault runs from $MOUNT/bitwarden_gcloud on disk $DISK_NAME, and
+  ~/bitwarden_gcloud points at it.
 
-      gcloud compute ssh $INSTANCE --zone $ZONE --command 'rm -rf ~/bitwarden_gcloud'
+  Check it yourself:
 
-  From here, upgrade the OS with:  ./utilities/upgrade-cos.sh
+      gcloud compute ssh $INSTANCE --zone $ZONE
+
+  then, on the instance:
+
+      df -h $MOUNT
+      cd ~/bitwarden_gcloud && docker-compose ps
+      curl -sI https://\$(grep '^DOMAIN=' .env | cut -d= -f2 | tr -d '"'"'"'"') /api/version | head -1
+
+  Log in from a real client before treating this as finished.
+
+  Next, upgrade the OS milestone:  ./upgrade-cos.sh --instance $INSTANCE --zone $ZONE
 EOF

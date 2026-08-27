@@ -11,7 +11,7 @@ for script in "$ROOT/utilities/migrate-to-data-disk.sh" "$ROOT/utilities/upgrade
 
 	# No remote command may invoke the aliased name. Mentions in prose telling a
 	# human what to type are fine, so only executable positions count.
-	aliased=$(printf '%s' "$src" | grep -nE '(on_vm|&&|;|^)[[:space:]]*docker-compose ' | grep -v 'echo ' || true)
+	aliased=$(printf '%s' "$src" | grep -nE '^[[:space:]]*(on_vm |if ! on_vm ).*docker-compose ' || true)
 	if [ -z "$aliased" ]; then
 		pass "$rel: no remote command calls the aliased docker-compose"
 	else
@@ -75,3 +75,17 @@ assert_contains "$mig" "get-serial-port-output"             "points at the seria
 assert_contains "$mig" "database size differs"              "compares the database size"
 assert_contains "$mig" "fewer files on the data disk"       "compares the file count"
 assert_contains "$mig" "MISSING:"                           "checks key files are present"
+
+# Running compose through the ~/bitwarden_gcloud symlink must resolve to the
+# same paths the containers were created with, or every switch between the
+# symlink and the real path recreates the stack.
+for script in "$ROOT/utilities/migrate-to-data-disk.sh" "$ROOT/utilities/upgrade-cos.sh" "$ROOT/utilities/install-alias.sh"; do
+	rel=${script#"$ROOT"/}
+	assert_contains "$(cat "$script")" 'pwd -P' "$rel resolves symlinks before invoking compose"
+done
+
+# The prune removes docker:cli, which the copy step needs immediately after.
+assert_contains "$mig" "docker pull -q docker:cli" "restores the compose image the prune removed"
+assert_contains "$mig" "already matches what this script would write" "skips the metadata prompt when nothing changes"
+assert_contains "$mig" 'ln -s $MOUNT/bitwarden_gcloud' "symlinks the familiar path to the data disk"
+assert_contains "$mig" "gcloud compute scp" "downloads the backup before removing the old copy"
