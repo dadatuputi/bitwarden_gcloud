@@ -26,6 +26,14 @@ case "$1 $2" in
 		[ "$1" = "--command" ] && { CMD="$2"; break; }
 		shift
 	done
+
+	# Every remote command is written to its own file so the suite can parse
+	# each one with a real shell. Quoting faults in these strings have shipped
+	# repeatedly; nothing local sees inside them.
+	if [ -n "${REMOTE_CMD_DIR:-}" ] && [ -n "$CMD" ]; then
+		mkdir -p "$REMOTE_CMD_DIR"
+		printf '%s' "$CMD" > "$REMOTE_CMD_DIR/cmd-$$-$(od -An -N2 -tu2 </dev/urandom | tr -d ' ').sh"
+	fi
 	case "$CMD" in
 	*"os-release"*)      printf '%s\n' "$MOCK_CURRENT_MILESTONE" ;;
 	*"pwd"*)             printf '/home/tester/bitwarden_gcloud\n' ;;

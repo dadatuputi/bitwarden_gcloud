@@ -39,8 +39,10 @@ Usage: $0 --instance NAME --zone ZONE [options]
   --disk-name NAME     the vault data disk (default: $DISK_NAME)
   --mount PATH         where it mounts (default: $MOUNT)
   --boot-size SIZE     new boot disk size (default: $BOOT_SIZE)
-  --boot-disk-name NAME name for the new boot disk (default: the instance name,
-                       which is what Compute Engine would pick anyway)
+  --boot-disk-device-name NAME
+                       device name the guest sees for the boot disk (default:
+                       the instance name). This is not the disk resource name,
+                       which Compute Engine derives from the instance name.
   --reboot-time HH:MM  update reboot window (default: $REBOOT_TIME)
   --keep-old           leave the old instance stopped and never delete it.
                        Implies --overlap. Costs free tier allowance until you
@@ -75,7 +77,7 @@ while [ $# -gt 0 ]; do
 	--disk-name) DISK_NAME="$2"; shift 2 ;;
 	--mount) MOUNT="$2"; shift 2 ;;
 	--boot-size) BOOT_SIZE="$2"; shift 2 ;;
-	--boot-disk-name) BOOT_DISK_NAME="$2"; shift 2 ;;
+	--boot-disk-device-name) BOOT_DISK_NAME="$2"; shift 2 ;;
 	--reboot-time) REBOOT_TIME="$2"; shift 2 ;;
 	--keep-old) KEEP_OLD=1; DELETE_FIRST=0; shift ;;
 	--delete-first) DELETE_FIRST=1; shift ;;
@@ -226,7 +228,19 @@ else
 fi
 
 say "Step 2/6: stop the stack and release the data disk"
-on_vm "$INSTANCE" "$COMPOSE_SRC cd $MOUNT/bitwarden_gcloud && compose down && sudo umount $MOUNT && echo UNMOUNTED"
+# cd out of the mount before unmounting it: a shell cannot unmount the
+# filesystem it is standing in. Docker also keeps the directory referenced
+# briefly after containers are removed, so retry rather than failing on the
+# first attempt, and say what is holding it if it never releases.
+on_vm "$INSTANCE" "$COMPOSE_SRC set -e; cd $MOUNT/bitwarden_gcloud && compose down; cd /; \
+  for i in 1 2 3 4 5 6; do \
+    if sudo umount $MOUNT 2>/dev/null; then echo UNMOUNTED; exit 0; fi; \
+    sleep 5; \
+  done; \
+  echo 'could not unmount $MOUNT after 30 seconds' >&2; \
+  sudo lsof +f -- $MOUNT 2>/dev/null | head -10 >&2 || true; \
+  ls -l /proc/*/cwd 2>/dev/null | grep $MOUNT >&2 || true; \
+  exit 1"
 gcloud compute instances stop "$INSTANCE" --zone "$ZONE"
 gcloud compute instances detach-disk "$INSTANCE" --disk "$DISK_NAME" --zone "$ZONE"
 echo "data disk detached and safe"
@@ -295,7 +309,10 @@ on_vm "$NEW_INSTANCE" "set -e; \
   echo '--- docker ---'; docker --version; \
   echo '--- boot disk split ---'; lsblk -o NAME,SIZE,TYPE | head -4; \
   echo '--- data disk ---'; df -h $MOUNT; \
-  cd $MOUNT/bitwarden_gcloud && ./utilities/install-alias.sh >/dev/null 2>&1 || true"
+  echo '--- reinstating the shell setup ---'; \
+  cd $MOUNT/bitwarden_gcloud && ./utilities/install-alias.sh; \
+  ln -sfn $MOUNT/bitwarden_gcloud ~/bitwarden_gcloud; \
+  ls -ld ~/bitwarden_gcloud"
 install_compose_helper "$NEW_INSTANCE"
 on_vm "$NEW_INSTANCE" "$COMPOSE_SRC cd $MOUNT/bitwarden_gcloud && compose up -d && sleep 25 && docker ps --format '{{.Names}}\t{{.Status}}'"
 
