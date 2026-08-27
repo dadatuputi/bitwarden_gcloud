@@ -13,13 +13,14 @@
 set -eu
 
 DISK_NAME=bwgc-data
-DISK_SIZE=20GB
+DISK_SIZE=15GB
 MOUNT=/mnt/disks/bwgc
 REBOOT_TIME=06:00
 INSTANCE=
 ZONE=
 ASSUME_YES=0
 PRINT_ONLY=0
+FORCE=0
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/lib-bwgc-cloudinit.sh"
@@ -31,7 +32,9 @@ Usage: $0 --instance NAME --zone ZONE [options]
   --instance NAME     the instance running bitwarden_gcloud (required)
   --zone ZONE         its zone, e.g. us-central1-a (required)
   --disk-name NAME    data disk to create (default: $DISK_NAME)
-  --disk-size SIZE    size, minimum 10GB on pd-standard (default: $DISK_SIZE)
+  --disk-size SIZE    default: $DISK_SIZE. The free tier covers 30GB of
+                      pd-standard total; 15GB here leaves room for the boot
+                      disk with margin. Larger values may bill.
                       20GB suits vaults with file attachments. Upgrades delete
                       the old boot disk before creating the new one, so only
                       one boot disk exists at a time and 10+20 stays at the
@@ -40,6 +43,8 @@ Usage: $0 --instance NAME --zone ZONE [options]
   --reboot-time HH:MM daily window for OS update reboots (default: $REBOOT_TIME)
   --print-cloud-config  print the generated cloud-config and exit
   --yes               do not prompt for confirmation
+  --force             size the disk past the free tier anyway, accepting the
+                      charge
 
 Free tier note: pd-standard only, 30 GB total. A 10 GB boot disk plus a 20 GB
 data disk is exactly 30 GB. upgrade-cos.sh deletes the old boot disk before
@@ -57,6 +62,7 @@ while [ $# -gt 0 ]; do
 	--reboot-time) REBOOT_TIME="$2"; shift 2 ;;
 	--print-cloud-config) PRINT_ONLY=1; shift ;;
 	--yes) ASSUME_YES=1; shift ;;
+	--force) FORCE=1; shift ;;
 	-h|--help) usage; exit 0 ;;
 	*) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
 	esac
@@ -116,6 +122,63 @@ on_vm 'set -e; cd ~/bitwarden_gcloud; \
     -pass pass:\"\$BACKUP_ENCRYPTION_KEY\" -in /data/backups/$(basename "$LATEST") \
     | tar tzf - | grep -qx db.sqlite3" \
   && echo "BACKUP_VERIFIED: archive decrypts and contains db.sqlite3"'
+
+# Size against what the vault actually holds.
+#
+# The free tier covers 30 GB of pd-standard. The boot disk takes whatever the
+# COS image declares -- 10 GB for every milestone since 2019 -- so 20 GB is the
+# largest data disk that still fits, and 15 GB leaves a margin for the boot disk
+# growing later.
+if [ "$DISK_SIZE" = 15GB ]; then
+	PAYLOAD_MB=$(on_vm 'du -sm --exclude=backups ~/bitwarden_gcloud 2>/dev/null | cut -f1' | tr -d '\r')
+	[ -n "$PAYLOAD_MB" ] || PAYLOAD_MB=0
+	PAYLOAD_GB=$(( (PAYLOAD_MB + 1023) / 1024 ))
+
+	BOOT_MIN=$(gcloud compute images describe-from-family cos-129-lts \
+		--project cos-cloud --format="value(diskSizeGb)" 2>/dev/null || echo 10)
+	[ -n "$BOOT_MIN" ] || BOOT_MIN=10
+
+	if [ "$PAYLOAD_GB" -ge 16 ]; then
+		cat >&2 <<EOF
+
+Your vault is ${PAYLOAD_GB} GB, excluding local backups.
+
+A data disk large enough for it, plus a ${BOOT_MIN} GB boot disk, exceeds the
+30 GB of pd-standard the free tier covers. There is no size that both holds
+your data and stays free.
+
+Re-run with --force --disk-size <size> to proceed and accept the charge.
+Standard persistent disk is about \$0.04 per GB per month.
+EOF
+		[ "$FORCE" -eq 1 ] || exit 1
+		echo "--force given: continuing at $DISK_SIZE" >&2
+	elif [ "$PAYLOAD_GB" -ge 12 ]; then
+		if [ "$BOOT_MIN" -le 10 ]; then
+			DISK_SIZE=20GB
+			cat <<EOF
+
+Your vault is ${PAYLOAD_GB} GB, close to the 15 GB default. Sizing the data
+disk at 20 GB instead.
+
+WARNING: 20 GB of data plus a ${BOOT_MIN} GB boot disk is exactly the 30 GB free
+tier allowance, with nothing spare. If a future COS milestone needs a larger
+boot disk, that no longer fits, and persistent disks cannot be shrunk -- moving
+to a smaller data disk means creating one and restoring onto it.
+EOF
+			confirm "Use a 20 GB data disk?"
+		else
+			cat >&2 <<EOF
+
+Your vault is ${PAYLOAD_GB} GB and the current COS image needs a ${BOOT_MIN} GB
+boot disk, so 20 GB of data no longer fits inside the 30 GB free tier.
+
+Re-run with --force --disk-size <size> to proceed and accept the charge.
+EOF
+			[ "$FORCE" -eq 1 ] || exit 1
+		fi
+	fi
+	echo "Vault is ${PAYLOAD_GB} GB; data disk will be $DISK_SIZE."
+fi
 
 say "Step 3/6: create and attach the data disk"
 if gcloud compute disks describe "$DISK_NAME" --zone "$ZONE" >/dev/null 2>&1; then

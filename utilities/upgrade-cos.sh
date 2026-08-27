@@ -53,11 +53,12 @@ Free tier: 30 GB of pd-standard, and the boot disk holds nothing unique -- the
 OS is read-only and Docker images re-pull for free. Deleting it first means only
 one boot disk ever exists, so the data disk gets the rest:
 
-    delete-first (default)   10 GB boot + up to 20 GB data
-    --overlap                10 GB boot + up to 10 GB data
+    boot   whatever the image declares it needs (10 GB since 2019)
+    data   15 GB, set by migrate-to-data-disk.sh
 
-Vaults with many file attachments want the 20 GB. Attachments are the only part
-of a vault that grows without bound.
+Deleting the old instance first means only one boot disk exists at a time, so
+25 GB of the 30 GB allowance is in use with 5 GB spare. If a future milestone
+ever needs more than 15 GB the script stops and asks.
 EOF
 }
 
@@ -109,6 +110,42 @@ if [ -z "$IMAGE_FAMILY" ]; then
 	echo "newest live LTS family: $IMAGE_FAMILY"
 fi
 MILESTONE=$(printf '%s' "$IMAGE_FAMILY" | sed 's/^cos-//; s/-lts$//')
+
+# The boot disk is whatever the image declares it needs. Google has said 10 GB
+# for every COS milestone since 2019.
+#
+# The data disk is 15 GB, and the free tier covers 30 GB of pd-standard in
+# total, so a boot disk above 15 GB no longer fits alongside it. That has never
+# happened; if it does, stop rather than silently start billing.
+DATA_DISK_GB=15
+IMAGE_MIN=$(gcloud compute images describe-from-family "$IMAGE_FAMILY" \
+	--project cos-cloud --format="value(diskSizeGb)" 2>/dev/null || true)
+
+if [ -n "$IMAGE_MIN" ]; then
+	if [ "$IMAGE_MIN" -gt "$DATA_DISK_GB" ]; then
+		cat >&2 <<EOF
+
+STOPPING: $IMAGE_FAMILY requires a ${IMAGE_MIN}GB boot disk.
+
+The data disk is ${DATA_DISK_GB}GB and the free tier covers 30GB of pd-standard
+in total, so a ${IMAGE_MIN}GB boot disk alongside it would bill.
+
+This needs a decision rather than a default. Either accept the charge:
+
+    $0 --instance $INSTANCE --zone $ZONE --boot-size ${IMAGE_MIN}GB
+
+or shrink the data disk first. Disks cannot be shrunk in place, so that means
+creating a smaller one and restoring the vault onto it.
+EOF
+		exit 1
+	fi
+	REQUESTED=$(printf '%s' "$BOOT_SIZE" | sed 's/[^0-9]//g')
+	if [ -n "$REQUESTED" ] && [ "$REQUESTED" -lt "$IMAGE_MIN" ]; then
+		echo "$IMAGE_FAMILY requires at least ${IMAGE_MIN}GB; raising boot disk to ${IMAGE_MIN}GB" >&2
+		BOOT_SIZE="${IMAGE_MIN}GB"
+	fi
+fi
+
 [ -n "$NEW_INSTANCE" ] || NEW_INSTANCE="${INSTANCE}-${MILESTONE}"
 
 CURRENT=$(on_vm "$INSTANCE" 'grep -h ^VERSION= /etc/os-release | cut -d= -f2' 2>/dev/null | tr -d '\r' || echo unknown)
@@ -218,6 +255,7 @@ say "Step 5/6: bring the vault up on the new milestone"
 on_vm "$NEW_INSTANCE" "set -e; \
   echo '--- milestone ---'; grep -E '^(VERSION|BUILD_ID)=' /etc/os-release; \
   echo '--- docker ---'; docker --version; \
+  echo '--- boot disk split ---'; lsblk -o NAME,SIZE,TYPE | head -4; \
   echo '--- data disk ---'; df -h $MOUNT; \
   cd $MOUNT/bitwarden_gcloud && ./utilities/install-alias.sh >/dev/null 2>&1 || true"
 on_vm "$NEW_INSTANCE" "cd $MOUNT/bitwarden_gcloud && docker-compose up -d && sleep 25 && docker ps --format '{{.Names}}\t{{.Status}}'"
