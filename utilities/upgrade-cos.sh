@@ -358,6 +358,36 @@ while [ $i -lt "$WAIT_TRIES" ]; do
 	if on_vm "$NEW_INSTANCE" 'true' >/dev/null 2>&1; then break; fi
 	i=$((i + 1))
 done
+# SSH answers before cloud-init has finished. The data disk mount is done by a
+# bootcmd, so a reachable instance is not yet a ready one -- checking too early
+# reports "No such file or directory" for a disk that mounts a few seconds
+# later.
+if on_vm "$NEW_INSTANCE" "true" >/dev/null 2>&1; then
+	printf 'waiting for cloud-init to mount %s' "$MOUNT"
+	m=0
+	while [ $m -lt "${BWGC_MOUNT_TRIES:-30}" ]; do
+		if on_vm "$NEW_INSTANCE" "mountpoint -q $MOUNT" >/dev/null 2>&1; then
+			printf ' mounted\n'
+			break
+		fi
+		printf '.'
+		[ "${BWGC_WAIT_SLEEP:-10}" -gt 0 ] && sleep "${BWGC_WAIT_SLEEP:-10}"
+		m=$((m + 1))
+	done
+	if ! on_vm "$NEW_INSTANCE" "mountpoint -q $MOUNT" >/dev/null 2>&1; then
+		cat >&2 <<EOF
+
+$MOUNT never mounted on $NEW_INSTANCE.
+
+The data disk is attached but cloud-init did not mount it. Your vault data is
+intact on $DISK_NAME. Check what cloud-init did:
+
+    gcloud compute ssh $NEW_INSTANCE --zone $ZONE --command 'sudo cloud-init status --long; ls -l /dev/disk/by-id/google-$DISK_NAME'
+EOF
+		exit 1
+	fi
+fi
+
 if ! on_vm "$NEW_INSTANCE" "true" >/dev/null 2>&1; then
 	cat >&2 <<EOF
 

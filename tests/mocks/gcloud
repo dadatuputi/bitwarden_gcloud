@@ -35,6 +35,13 @@ case "$1 $2" in
 		printf '%s' "$CMD" > "$REMOTE_CMD_DIR/cmd-$$-$(od -An -N2 -tu2 </dev/urandom | tr -d ' ').sh"
 	fi
 	case "$CMD" in
+	*"mountpoint -q"*)
+		# Absent for the first MOCK_MOUNT_DELAY polls, then present.
+		_n=$(cat /tmp/bwgc-mountpolls 2>/dev/null || echo 0)
+		_n=$((_n + 1)); printf '%s' "$_n" > /tmp/bwgc-mountpolls
+		[ "$_n" -le "${MOCK_MOUNT_DELAY:-0}" ] && exit 1
+		exit 0
+		;;
 	*"os-release"*)      printf '%s\n' "$MOCK_CURRENT_MILESTONE" ;;
 	*"pwd"*)             printf '/home/tester/bitwarden_gcloud\n' ;;
 	*"backups/*.aes256"*) printf '/mnt/disks/bwgc/bitwarden_gcloud/bitwarden/backups/bw_backup_1970-01-01-000000.tar.gz.aes256\n' ;;

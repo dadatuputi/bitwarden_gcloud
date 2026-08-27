@@ -147,3 +147,28 @@ if [ -n "$snap" ] && [ -n "$del" ] && [ "$snap" -lt "$del" ]; then
 else
 	fail "the configuration snapshot precedes the deletion" "snapshot=$snap delete=$del"
 fi
+
+# SSH answers before cloud-init finishes. The data disk is mounted by a bootcmd,
+# so a reachable instance is not a ready one: checking too early reports the
+# mount missing for a disk that appears seconds later.
+assert_contains "$up" "waiting for cloud-init to mount" "waits for the mount, not just for ssh"
+assert_contains "$up" "never mounted on"                "reports a mount that never appears"
+assert_contains "$up" "cloud-init status --long"        "points at cloud-init when the mount fails"
+
+# The wait must come before anything that uses the mount.
+wait_line=$(grep -n 'waiting for cloud-init to mount' "$ROOT/utilities/upgrade-cos.sh" | head -1 | cut -d: -f1)
+use_line=$(grep -n 'compose up -d' "$ROOT/utilities/upgrade-cos.sh" | head -1 | cut -d: -f1)
+if [ -n "$wait_line" ] && [ -n "$use_line" ] && [ "$wait_line" -lt "$use_line" ]; then
+	pass "the mount wait precedes starting the stack"
+else
+	fail "the mount wait precedes starting the stack" "wait=$wait_line use=$use_line"
+fi
+
+# And it must actually poll rather than pass on the first look.
+rm -f /tmp/bwgc-mountpolls
+W3="$WORK/mountwait"; rm -rf "$W3"; mkdir -p "$W3"
+out=$( cd "$W3" && GCLOUD_LOG="$W3/calls.log" MOCK_MOUNT_DELAY=3 \
+  "$ROOT/utilities/upgrade-cos.sh" --instance vault --zone us-central1-a --yes 2>&1 || true )
+rm -f /tmp/bwgc-mountpolls
+assert_contains "$out" "waiting for cloud-init to mount" "polls when the mount is not yet present"
+assert_contains "$out" "mounted"                         "proceeds once the mount appears"
