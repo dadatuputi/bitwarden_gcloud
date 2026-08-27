@@ -572,20 +572,41 @@ fi
 # bwgc.service for the container names.
 on_vm 'sudo cloud-init status --wait >/dev/null 2>&1; :'
 
+# bwgc.service owns starting the stack. This script must not also run compose:
+# an "is it active yet" check is a point-in-time sample, and on a real run both
+# sides created a network called bitwarden_gcloud_default one millisecond apart,
+# after which every container start failed with "network ... is ambiguous
+# (2 matches found on name)" and the five-minute supervise timer failed the same
+# way forever. Wait for the unit instead.
+printf 'waiting for bwgc.service to start the stack'
+k=0
+STACK_STATE=
+while [ $k -lt "${BWGC_STACK_TRIES:-30}" ]; do
+	STACK_STATE=$(on_vm 'systemctl is-active bwgc.service 2>/dev/null' 2>/dev/null | tr -d '\r')
+	case "$STACK_STATE" in
+	active) printf ' started\n'; break ;;
+	failed) printf ' failed\n'; break ;;
+	esac
+	printf '.'
+	[ "$WAIT_SLEEP" -gt 0 ] && sleep "$WAIT_SLEEP"
+	k=$((k + 1))
+done
+if [ "$STACK_STATE" != active ]; then
+	cat >&2 <<EOF
+
+bwgc.service did not bring the stack up (state: ${STACK_STATE:-unknown}).
+
+Your vault data is on $DISK_NAME and nothing has been deleted. See what it did:
+
+    gcloud compute ssh $INSTANCE --zone $ZONE --command 'sudo journalctl -u bwgc.service -b --no-pager'
+EOF
+	exit 1
+fi
+
 install_compose_helper
 on_vm "set -e; echo '--- mount ---'; df -h $MOUNT; \
-  echo '--- timer ---'; systemctl list-timers cos-update-reboot.timer --no-pager | head -3"
-# cloud-init starts the stack itself once the disk is mounted. Only start it
-# here if that did not happen, so the two do not race for the container names.
-on_vm "$COMPOSE_SRC set -e; \
-  if [ \"\$(systemctl is-active bwgc.service 2>/dev/null)\" = active ]; then \
-    echo 'stack started by bwgc.service'; \
-  else \
-    echo '--- starting the stack from its new home ---'; \
-    cd $MOUNT/bitwarden_gcloud && compose up -d; \
-  fi; \
-  sleep 20; \
-  docker ps --format '{{.Names}}\t{{.Status}}'"
+  echo '--- timer ---'; systemctl list-timers cos-update-reboot.timer --no-pager | head -3; \
+  echo '--- containers ---'; docker ps --format '{{.Names}}\t{{.Status}}'"
 
 say "Step 7/7: retire the old copy"
 

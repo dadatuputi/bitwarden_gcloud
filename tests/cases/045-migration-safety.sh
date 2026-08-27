@@ -93,3 +93,51 @@ if printf '%s' "$mig" | grep -q "[^o] rm -rf ~/bitwarden_gcloud"; then
 else
 	pass "every documented rm -rf uses sudo"
 fi
+
+# Iteration 3: both scripts started the stack themselves as a fallback when
+# bwgc.service "was not active yet". That check is a point-in-time sample, and
+# on a real run both sides created a network named bitwarden_gcloud_default one
+# millisecond apart. Every container start then failed with "network ... is
+# ambiguous (2 matches found on name)", and the supervise timer failed the same
+# way every five minutes indefinitely.
+for f in migrate-to-data-disk.sh upgrade-cos.sh; do
+	body=$(grep -vE '^[[:space:]]*#' "$ROOT/utilities/$f")
+	if printf '%s' "$body" | grep -q 'is-active bwgc.service.*compose up'; then
+		fail "$f: does not start the stack alongside bwgc.service"
+	else
+		pass "$f: does not start the stack alongside bwgc.service"
+	fi
+	assert_contains "$(cat "$ROOT/utilities/$f")" "waiting for bwgc.service to start the stack" \
+		"$f: waits for bwgc.service instead"
+	assert_contains "$(cat "$ROOT/utilities/$f")" 'STACK_STATE" != active' \
+		"$f: fails loudly when the stack never comes up"
+done
+
+# upgrade-cos.sh defaulted the data disk to bwgc-data and aborted after stopping
+# the stack and the instance. In a project holding a bwgc-data disk in the same
+# zone it would have carried over the wrong disk without asking.
+# DISK_NAME must start empty, or the derivation never runs and the default is
+# used blindly again.
+if grep -qE '^DISK_NAME=$' "$ROOT/utilities/upgrade-cos.sh"; then
+	pass "the disk name starts unset so it can be derived"
+else
+	fail "the disk name starts unset so it can be derived" "$(grep -n '^DISK_NAME=' "$ROOT/utilities/upgrade-cos.sh" | head -1)"
+fi
+assert_contains "$upg" 'DISK_NAME_DEFAULT'          "keeps the fallback separate from what was asked for"
+assert_contains "$upg" 'data disk read from'        "reads the data disk off the instance"
+assert_contains "$upg" 'No disk named $DISK_NAME'   "checks the disk exists"
+first_disk_check=$(printf '%s' "$upg" | grep -n 'No disk named' | head -1 | cut -d: -f1)
+stop_stack=$(printf '%s' "$upg" | grep -n 'Step 2/6' | head -1 | cut -d: -f1)
+if [ -n "$first_disk_check" ] && [ -n "$stop_stack" ] && [ "$first_disk_check" -lt "$stop_stack" ]; then
+	pass "the disk check runs before the stack is stopped"
+else
+	fail "the disk check runs before the stack is stopped" "check at $first_disk_check, stop at $stop_stack"
+fi
+
+# rclone is optional, and the ERROR landed in the step described as "back up and
+# verify before touching anything", immediately before the instance is deleted.
+assert_not_contains "$upg" "backup.sh local,rclone" "the upgrade does not demand an rclone backup"
+
+# DNS may not point at the instance yet. That must not become the exit status of
+# an upgrade that otherwise worked.
+assert_contains "$upg" "external check above is informational" "the external check cannot fail the run"

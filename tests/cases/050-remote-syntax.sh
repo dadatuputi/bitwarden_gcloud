@@ -164,11 +164,11 @@ assert_contains "$up" "cloud-init status --long"        "points at cloud-init wh
 
 # The wait must come before anything that uses the mount.
 wait_line=$(grep -n 'waiting for cloud-init to mount' "$ROOT/utilities/upgrade-cos.sh" | head -1 | cut -d: -f1)
-use_line=$(grep -n 'compose up -d' "$ROOT/utilities/upgrade-cos.sh" | head -1 | cut -d: -f1)
+use_line=$(grep -n 'waiting for bwgc.service' "$ROOT/utilities/upgrade-cos.sh" | head -1 | cut -d: -f1)
 if [ -n "$wait_line" ] && [ -n "$use_line" ] && [ "$wait_line" -lt "$use_line" ]; then
-	pass "the mount wait precedes starting the stack"
+	pass "the mount wait precedes waiting for the stack"
 else
-	fail "the mount wait precedes starting the stack" "wait=$wait_line use=$use_line"
+	fail "the mount wait precedes waiting for the stack" "wait=$wait_line use=$use_line"
 fi
 
 # And it must actually poll rather than pass on the first look.
