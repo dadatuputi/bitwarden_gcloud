@@ -92,7 +92,7 @@ fi
 # A shell cannot unmount the filesystem it is standing in. The unmount command
 # ran "cd $MOUNT/bitwarden_gcloud && ... && umount $MOUNT", which always fails
 # with "target is busy" -- and it fails after the stack is already stopped.
-umount_cmd=$(printf '%s' "$up" | grep -A8 'umount' | head -12)
+umount_cmd=$(printf '%s' "$up" | grep -B6 -A8 'sudo umount' | head -18)
 if printf '%s' "$umount_cmd" | grep -q 'cd /;'; then
 	pass "leaves the mount before unmounting it"
 else
