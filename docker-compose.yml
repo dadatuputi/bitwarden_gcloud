@@ -13,8 +13,10 @@ services:
     # Vaultwarden is a Rust (mostly) feature-complete implementation of Bitwarden
     # https://github.com/dani-garcia/vaultwarden
     image: vaultwarden/server:latest-alpine
-    restart: always
+    restart: ${BWGC_RESTART_POLICY:-always}
     container_name: bitwarden
+    mem_limit: 320m
+    pids_limit: 200
     depends_on:
     - proxy
     <<: *default-logging
@@ -22,6 +24,11 @@ services:
     - ${PWD}/bitwarden:/data
     environment:
     - LOG_FILE=/data/bitwarden.log
+    # vaultwarden has no log rotation, and at its default "info" level it writes
+    # a request/response pair for every HTTP call. Left alone this file grows
+    # without bound. Every line the fail2ban filters match is logged at ERROR,
+    # so "warn" loses no protection. Set LOG_LEVEL=info in .env when debugging.
+    - LOG_LEVEL=${LOG_LEVEL:-warn}
     - SHOW_PASSWORD_HINT=false
     - DOMAIN=https://${DOMAIN}          # DOMAIN is set in .env but doesn't have protocol prefix
     - IP_HEADER=X-Real-IP
@@ -47,8 +54,10 @@ services:
   backup:
     #build: ./docker/backup                                     # backup, in case container registry is not responsive
     image: ghcr.io/dadatuputi/bwgc_backup:master                # from https://github.com/dadatuputi/bwgc_backup
-    restart: on-failure
+    restart: ${BWGC_RESTART_POLICY:-on-failure}
     container_name: backup
+    mem_limit: 192m
+    pids_limit: 100
     depends_on:
     - bitwarden
     <<: *default-logging
@@ -57,7 +66,6 @@ services:
       - ${PWD}/bitwarden:/data
       - ${PWD}/bitwarden/rclone:/data/rclone
       - ${PWD}/bitwarden/backups:/data/backups
-      - /var/run/docker.sock:/var/run/docker.sock
     environment:
     - BACKUP                            # Value-less variables are set in .env
     - BACKUP_SCHEDULE
@@ -66,9 +74,15 @@ services:
     - BACKUP_ENCRYPTION_KEY
     - BACKUP_EMAIL_TO
     - BACKUP_EMAIL_NOTIFY
+    - BACKUP_EMAIL_NOTIFY_ON_FAILURE_ONLY
     - BACKUP_RCLONE_CONF
     - BACKUP_RCLONE_DEST
     - BACKUP_ENV
+    # Weekly check: is this host's OS milestone still supported, and has a
+    # backup actually run recently? Both fail silently otherwise.
+    # CHECK_SCHEDULE=disabled turns it off.
+    - CHECK_SCHEDULE
+    - BACKUP_MAX_AGE_DAYS
     - SMTP_HOST
     - SMTP_FROM
     - SMTP_FROM_NAME=Bitwarden Backup (${DOMAIN})
@@ -85,8 +99,10 @@ services:
     # https://caddyserver.com/
     #build: ./docker/proxy                              # backup, in case container registry is not responsive
     image: ghcr.io/dadatuputi/bwgc_caddy:master         # from https://github.com/dadatuputi/bwgc_proxy
-    restart: always
+    restart: ${BWGC_RESTART_POLICY:-always}
     container_name: proxy
+    mem_limit: 128m
+    pids_limit: 100
     <<: *default-logging
     volumes:
     - ${PWD}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
@@ -107,8 +123,10 @@ services:
     # and editing the ddns/config/ddclient.conf file
     # https://github.com/linuxserver/docker-ddclient
     image: linuxserver/ddclient
-    restart: always
+    restart: ${BWGC_RESTART_POLICY:-always}
     container_name: ddns
+    mem_limit: 64m
+    pids_limit: 50
     <<: *default-logging
     depends_on:
     - bitwarden
@@ -147,15 +165,16 @@ services:
     # https://github.com/dani-garcia/vaultwarden/wiki/Fail2Ban-Setup
     # https://github.com/crazy-max/docker-fail2ban
     image: crazymax/fail2ban:latest
-    restart: always
+    restart: ${BWGC_RESTART_POLICY:-always}
     container_name: fail2ban
+    mem_limit: 128m
+    pids_limit: 100
     <<: *default-logging
     depends_on:
     - bitwarden
     volumes:
     - ${PWD}/fail2ban:/data
     - ${PWD}/bitwarden:/bitwarden:ro
-    - /var/log:/var/log:ro
     - /run/systemd/journal:/run/systemd/journal:ro 
     network_mode: "host"
     cap_add:
@@ -170,17 +189,18 @@ services:
 
   countryblock:
     # The block script will block any country (defaults to CN and AU)
-    # Requires cap_add as listed and privileged because it uses iptables and ipset
+    # Requires cap_add as listed because it uses iptables and ipset
     # https://hub.docker.com/_/alpine/
     #build: ./docker/countryblock                       # backup, in case container registry is not responsive
     image: ghcr.io/dadatuputi/bwgc_countryblock:master  # from https://github.com/dadatuputi/bwgc_countryblock
-    restart: always
+    restart: ${BWGC_RESTART_POLICY:-always}
     container_name: countryblock
+    mem_limit: 128m
+    pids_limit: 100
     <<: *default-logging
     depends_on:
     - bitwarden
     network_mode: "host"
-    privileged: true
     cap_add:
     - NET_ADMIN
     - NET_RAW
@@ -195,8 +215,13 @@ services:
     # and restart it with the same options that were used when it was deployed initially
     # https://github.com/nicholas-fedor/watchtower
     image: nickfedor/watchtower
-    restart: always
+    restart: ${BWGC_RESTART_POLICY:-always}
     container_name: watchtower
+    mem_limit: 96m
+    pids_limit: 100
+    # Opt-in: this service only starts with `docker-compose --profile watchtower up -d`.
+    # See the security note in README.md before enabling.
+    profiles: ["watchtower"]
     <<: *default-logging
     depends_on:
     - bitwarden

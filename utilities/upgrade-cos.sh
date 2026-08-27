@@ -111,6 +111,7 @@ COMPOSE_SRC=". $COMPOSE_HELPER;"
 # Heredoc body is quoted, so nothing in it is expanded locally.
 compose_helper_body() {
 	cat <<'BWGCEOF'
+# Sourced, not executed: /home is noexec. Defines compose and docker-compose.
 compose() {
   if docker compose version >/dev/null 2>&1; then
     docker compose "$@"
@@ -118,9 +119,12 @@ compose() {
     docker run --rm \
       -v /var/run/docker.sock:/var/run/docker.sock \
       -v "$(pwd -P):$(pwd -P)" -w="$(pwd -P)" \
+      -e COMPOSE_DOCKER_CLI_BUILD=1 \
+      -e DOCKER_BUILDKIT=1 \
       --entrypoint docker docker:cli compose "$@"
   fi
 }
+docker-compose() { compose "$@"; }
 BWGCEOF
 }
 install_compose_helper() {
@@ -431,6 +435,12 @@ zone capacity for e2-micro is the usual cause -- and re-run this script.
 EOF
 	exit 1
 fi
+
+# cloud-init mounts the disk in bootcmd but starts the stack and enables the
+# timers later, in runcmd. Waiting only for the mount means arriving while that
+# is still in flight: the timer listing comes back empty and compose races
+# bwgc.service for the container names.
+on_vm "$NEW_INSTANCE" 'sudo cloud-init status --wait >/dev/null 2>&1; :'
 
 say "Step 5/6: bring the vault up on the new milestone"
 on_vm "$NEW_INSTANCE" "set -e; \

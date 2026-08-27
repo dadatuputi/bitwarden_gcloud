@@ -87,6 +87,7 @@ COMPOSE_SRC=". $COMPOSE_HELPER;"
 # Heredoc body is quoted, so nothing in it is expanded locally.
 compose_helper_body() {
 	cat <<'BWGCEOF'
+# Sourced, not executed: /home is noexec. Defines compose and docker-compose.
 compose() {
   if docker compose version >/dev/null 2>&1; then
     docker compose "$@"
@@ -94,9 +95,12 @@ compose() {
     docker run --rm \
       -v /var/run/docker.sock:/var/run/docker.sock \
       -v "$(pwd -P):$(pwd -P)" -w="$(pwd -P)" \
+      -e COMPOSE_DOCKER_CLI_BUILD=1 \
+      -e DOCKER_BUILDKIT=1 \
       --entrypoint docker docker:cli compose "$@"
   fi
 }
+docker-compose() { compose "$@"; }
 BWGCEOF
 }
 install_compose_helper() {
@@ -138,18 +142,40 @@ confirm "Proceed?"
 
 install_compose_helper
 
+# Two different states look alike here. The copy is on the disk either way; what
+# separates a finished migration from one that stopped partway is whether the
+# user-data metadata was ever written, because that is what remounts the disk on
+# the next boot. Without it the disk is mounted only until something reboots.
 ALREADY=$(on_vm "if mountpoint -q $MOUNT && [ -d $MOUNT/bitwarden_gcloud ]; then echo yes; fi" | tr -d '\r')
-if [ "$ALREADY" = yes ]; then
+HAVE_META=$(gcloud compute instances describe "$INSTANCE" --zone "$ZONE" \
+	--format='value(metadata.items.user-data)' 2>/dev/null | grep -c 'bwgc' || true)
+RESUME=0
+if [ "$ALREADY" = yes ] && [ "${HAVE_META:-0}" -eq 0 ]; then
 	cat >&2 <<EOF
 
-STOPPING: $MOUNT is already mounted and holds a deployment.
+$MOUNT is mounted and holds a deployment, but this instance has no user-data
+metadata. A previous run copied the data and stopped before recording the
+layout.
 
-This host has been migrated. Running this script again would back up and copy
-from ~/bitwarden_gcloud, which is the stale pre-migration copy -- the running
-containers read from $MOUNT.
+That is not a finished migration. The mount is not declared anywhere, so the
+next reboot comes up without it and the vault starts against an empty
+directory.
 
-If the migration finished, there is nothing to do. If you want to retire the old
-copy and create the symlink, do that directly:
+Nothing needs copying again. What is left is to write the metadata, reboot, and
+check the mount comes back.
+EOF
+	confirm "Finish the interrupted migration?"
+	RESUME=1
+elif [ "$ALREADY" = yes ]; then
+	cat >&2 <<EOF
+
+STOPPING: $MOUNT is already mounted, holds a deployment, and the layout is
+recorded in this instance's metadata. The migration is complete.
+
+Running this script again would back up and copy from ~/bitwarden_gcloud, which
+is the stale pre-migration copy -- the running containers read from $MOUNT.
+
+To retire that old copy and leave a symlink in its place:
 
     gcloud compute ssh $INSTANCE --zone $ZONE --command \\
       'sudo rm -rf ~/bitwarden_gcloud && ln -s $MOUNT/bitwarden_gcloud ~/bitwarden_gcloud'
@@ -160,6 +186,10 @@ To upgrade the OS milestone instead:
 EOF
 	exit 1
 fi
+
+# Steps 1 to 4 copy the data. A resumed run already has it on the disk and
+# only needs the metadata written, so skip straight to Step 5.
+if [ "$RESUME" -eq 0 ]; then
 
 # Everything from Step 1 onwards changes the instance. Step 2 backs the vault up
 # through the backup container, so check it can before anything moves.
@@ -273,10 +303,30 @@ if [ "$DISK_SIZE" = "${DEFAULT_DATA_GB}GB" ]; then
 	[ -n "$PAYLOAD_MB" ] || PAYLOAD_MB=0
 	PAYLOAD_GB=$(( (PAYLOAD_MB + 1023) / 1024 ))
 
-	BOOT_MIN=$(gcloud compute images describe-from-family cos-129-lts \
-		--project cos-cloud --format="value(diskSizeGb)" 2>/dev/null || echo 10)
-	[ -n "$BOOT_MIN" ] || BOOT_MIN=10
-	MAX_DATA_GB=$(( FREE_TIER_GB - BOOT_MIN ))
+	# The boot disk this instance actually has, not what a COS image declares as
+	# its minimum. A deployment built from the old instructions has 30 GB.
+	BOOT_DISK=$(gcloud compute instances describe "$INSTANCE" --zone "$ZONE" \
+		--format="value(disks[0].source.basename())" 2>/dev/null || true)
+	BOOT_GB=$(gcloud compute disks describe "$BOOT_DISK" --zone "$ZONE" \
+		--format="value(sizeGb)" 2>/dev/null || true)
+	[ -n "$BOOT_GB" ] || BOOT_GB=10
+	MAX_DATA_GB=$(( FREE_TIER_GB - BOOT_GB ))
+	[ "$MAX_DATA_GB" -lt 0 ] && MAX_DATA_GB=0
+
+	if [ "$MAX_DATA_GB" -lt "$DEFAULT_DATA_GB" ]; then
+		cat >&2 <<EOF
+
+NOTE: this instance has a ${BOOT_GB} GB boot disk, so a ${DEFAULT_DATA_GB} GB data disk
+puts you at $(( BOOT_GB + DEFAULT_DATA_GB )) GB against a ${FREE_TIER_GB} GB free allowance.
+
+Persistent disks cannot be shrunk, so the boot disk stays this size until the
+instance is replaced. The COS upgrade does replace it, and builds the new one at
+10 GB, which brings you back inside the allowance. Until then the overage is
+about \$$(( (BOOT_GB + DEFAULT_DATA_GB - FREE_TIER_GB) * 4 / 100 )).$(( (BOOT_GB + DEFAULT_DATA_GB - FREE_TIER_GB) * 4 % 100 )) a month at \$0.04 per GB.
+EOF
+		confirm "Continue with a ${DEFAULT_DATA_GB} GB data disk?"
+		MAX_DATA_GB=$DEFAULT_DATA_GB
+	fi
 
 	TARGET_GB=$DEFAULT_DATA_GB
 	if [ $(( PAYLOAD_GB + HEADROOM_GB )) -ge "$TARGET_GB" ]; then
@@ -288,7 +338,7 @@ if [ "$DISK_SIZE" = "${DEFAULT_DATA_GB}GB" ]; then
 Vault is ${PAYLOAD_GB} GB, within ${HEADROOM_GB} GB of filling a ${DEFAULT_DATA_GB} GB disk.
 Expanding the data disk to ${TARGET_GB} GB.
 
-WARNING: ${TARGET_GB} GB of data plus a ${BOOT_MIN} GB boot disk is the whole
+WARNING: ${TARGET_GB} GB of data plus a ${BOOT_GB} GB boot disk is the whole
 ${FREE_TIER_GB} GB free tier allowance, with nothing spare. A later COS
 milestone needing a larger boot disk would no longer fit, and persistent disks
 cannot be shrunk -- moving to a smaller one means creating it and restoring
@@ -300,7 +350,7 @@ EOF
 
 STOPPING: vault is ${PAYLOAD_GB} GB, and no data disk both holds it and stays free.
 
-The largest that fits alongside a ${BOOT_MIN} GB boot disk is ${MAX_DATA_GB} GB,
+The largest that fits alongside a ${BOOT_GB} GB boot disk is ${MAX_DATA_GB} GB,
 which leaves less than the ${HEADROOM_GB} GB of headroom this script requires.
 
 Re-run with --force --disk-size <size> to proceed and accept the charge.
@@ -312,7 +362,7 @@ EOF
 		fi
 	fi
 	DISK_SIZE="${TARGET_GB}GB"
-	echo "Vault is ${PAYLOAD_GB} GB; data disk will be ${DISK_SIZE} (boot ${BOOT_MIN} GB, free tier ${FREE_TIER_GB} GB)."
+	echo "Vault is ${PAYLOAD_GB} GB; data disk will be ${DISK_SIZE} (boot ${BOOT_GB} GB, free tier ${FREE_TIER_GB} GB)."
 fi
 
 say "Step 3/7: create and attach the data disk"
@@ -389,6 +439,8 @@ on_vm "set -e; \
   sudo grep '^BWGC_RESTART_POLICY=' $MOUNT/bitwarden_gcloud/.env; \
   sync"
 
+fi
+
 say "Step 5/7: record the layout in instance metadata"
 BACKUP_META=$(mktemp)
 gcloud compute instances describe "$INSTANCE" --zone "$ZONE" \
@@ -401,6 +453,12 @@ emit_cloud_config "$DISK_NAME" "$MOUNT" "$REBOOT_TIME" > "$CC"
 # mount and the update timer are declared in instance metadata instead, which
 # cloud-init reapplies on every boot. Writing this key is how the data disk gets
 # mounted at all -- without it the vault starts against an empty directory.
+# gcloud's value() prints a bare newline when the key is absent, so -s alone is
+# true for an instance with no metadata at all and the "will be replaced"
+# warning fired against an empty block.
+if ! grep -q '[^[:space:]]' "$BACKUP_META" 2>/dev/null; then
+	: > "$BACKUP_META"
+fi
 if [ -s "$BACKUP_META" ] && cmp -s "$BACKUP_META" "$CC"; then
 	echo "user-data metadata already matches what this script would write; leaving it alone."
 elif [ -s "$BACKUP_META" ]; then
@@ -442,25 +500,36 @@ gcloud compute instances remove-metadata "$INSTANCE" --zone "$ZONE" --keys start
 
 say "Step 6/7: reboot and verify the mount returns"
 confirm "Reboot $INSTANCE now to prove the mount survives?"
-# Flush again, then shut down rather than reset. "instances reset" is a power
-# cycle: it neither flushes page cache nor unmounts, so a file written seconds
-# earlier can reach the disk truncated, and the fsck in bootcmd then zero-fills
-# the tail. That corrupted .env on a real run.
-on_vm 'sync'
-gcloud compute instances stop "$INSTANCE" --zone "$ZONE"
-gcloud compute instances start "$INSTANCE" --zone "$ZONE"
+# Reboot from inside the guest, not "instances reset" and not stop/start.
+#
+# reset is a power cycle: it neither flushes page cache nor unmounts, so a file
+# written seconds earlier reaches the disk truncated and the fsck in bootcmd
+# zero-fills the tail. That corrupted .env on a real run.
+#
+# stop/start is graceful but releases the ephemeral external address, so the
+# vault comes back on a different IP and any DNS pointing at it goes stale.
+# Rebooting is graceful and leaves the instance RUNNING, so the address stays.
+BOOT_ID=$(on_vm 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null | tr -d '\r')
+# ssh dies with the host it is running on, so a non-zero exit here is the
+# reboot working rather than a failure. The boot id below is what proves it.
+on_vm 'sync; sudo systemctl reboot' >/dev/null 2>&1 || :
 echo "waiting for the instance to come back..."
 # Tunable so the test harness does not wait five minutes for a mocked host.
 WAIT_TRIES="${BWGC_WAIT_TRIES:-30}"
 WAIT_SLEEP="${BWGC_WAIT_SLEEP:-10}"
+# Wait for a different boot id, not merely for ssh: ssh answers again while the
+# old boot is still shutting down, and a reboot that never happened would
+# otherwise look like success.
 i=0
 while [ $i -lt "$WAIT_TRIES" ]; do
 	[ "$WAIT_SLEEP" -gt 0 ] && sleep "$WAIT_SLEEP"
-	if on_vm 'true' >/dev/null 2>&1; then break; fi
+	NOW_ID=$(on_vm 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null | tr -d '\r' || true)
+	if [ -n "$NOW_ID" ] && [ "$NOW_ID" != "$BOOT_ID" ]; then break; fi
 	i=$((i + 1))
 done
 
-if ! on_vm 'true' >/dev/null 2>&1; then
+NOW_ID=$(on_vm 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null | tr -d '\r' || true)
+if [ -z "$NOW_ID" ] || [ "$NOW_ID" = "$BOOT_ID" ]; then
 	cat >&2 <<EOF
 
 $INSTANCE did not come back after the reboot.
@@ -496,6 +565,12 @@ nothing is lost. cloud-init did not mount the disk. Check what it did:
 EOF
 	exit 1
 fi
+
+# cloud-init mounts the disk in bootcmd but starts the stack and enables the
+# timers later, in runcmd. Waiting only for the mount means arriving while that
+# is still in flight: the timer listing comes back empty and compose races
+# bwgc.service for the container names.
+on_vm 'sudo cloud-init status --wait >/dev/null 2>&1; :'
 
 install_compose_helper
 on_vm "set -e; echo '--- mount ---'; df -h $MOUNT; \
