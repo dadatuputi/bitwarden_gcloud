@@ -1,0 +1,79 @@
+# Cloudflare Tunnel overlay.
+#
+# Use it by setting this in .env, and nothing else changes:
+#
+#     COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel.yml
+#
+# Compose reads COMPOSE_FILE from .env, so the shim, bwgc.service,
+# bwgc-supervise.timer and both maintenance scripts pick this up with no
+# changes. A deployment whose .env does not set it is completely unaffected:
+# docker-compose.yml on its own is exactly what it always was.
+#
+# The tunnel makes an outbound connection to Cloudflare, so the instance needs
+# no inbound ports, no firewall rules, no certificate and no DNS record of its
+# own. That retires four services rather than one, and each is disabled here by
+# assigning it to a profile that is never enabled -- compose profiles are
+# additive, so this is how an overlay removes a service.
+
+services:
+
+  # Caddy terminated TLS and injected the real client IP. Cloudflare's edge does
+  # both now.
+  proxy:
+    profiles: ["caddy-only"]
+
+  # ddclient kept an A record pointed at this instance. A tunnel is an outbound
+  # connection and Cloudflare manages the hostname as a CNAME, so there is no
+  # record to update.
+  ddns:
+    profiles: ["caddy-only"]
+
+  # countryblock filtered inbound connections with iptables. There are none.
+  # Cloudflare's WAF does geographic blocking at the edge instead.
+  countryblock:
+    profiles: ["caddy-only"]
+
+  # fail2ban still detects failed logins, but its bans are iptables rules and no
+  # attacker packet reaches this host's network stack, so they enforce nothing.
+  # Replace it with a Cloudflare rate limiting rule on the login endpoint and an
+  # Access policy on /admin. See the wiki.
+  fail2ban:
+    profiles: ["caddy-only"]
+
+  bitwarden:
+    # The base file has bitwarden depend on proxy, which is disabled above, and
+    # compose rejects a project whose service depends on one that is not in it.
+    # An empty list here would be merged with the inherited one and change
+    # nothing; !reset is what discards it.
+    depends_on: !reset []
+    environment:
+      # Cloudflare sends the client address in CF-Connecting-IP; without this
+      # every request appears to come from the tunnel container.
+      - IP_HEADER=CF-Connecting-IP
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: ${BWGC_RESTART_POLICY:-always}
+    container_name: cloudflared
+    mem_limit: 96m
+    pids_limit: 50
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+    - bitwarden
+    environment:
+    # Both are read by cloudflared directly. TUNNEL_TOKEN is the tunnel's
+    # credential and belongs in .env; TUNNEL_URL is where it forwards requests,
+    # which is vaultwarden on the compose network.
+    - TUNNEL_TOKEN
+    - TUNNEL_URL=http://bitwarden:80
+    - TUNNEL_METRICS=0.0.0.0:20241
+    command: tunnel --no-autoupdate run
+    healthcheck:
+      test: ["CMD", "cloudflared", "--version"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
