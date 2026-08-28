@@ -130,19 +130,23 @@ install_compose_helper
 # user-data metadata was ever written, because that is what remounts the disk on
 # the next boot. Without it the disk is mounted only until something reboots.
 ALREADY=$(on_vm "if mountpoint -q $MOUNT && [ -d $MOUNT/bitwarden_gcloud ]; then echo yes; fi" | tr -d '\r')
+# Match the disk this run is about, not merely "some bwgc metadata exists".
+# After a recovery the instance still carries metadata naming the disk that was
+# lost, and treating that as a finished migration reported "The migration is
+# complete" while the recorded layout pointed at a disk that no longer exists.
 HAVE_META=$(gcloud compute instances describe "$INSTANCE" --zone "$ZONE" \
-	--format='value(metadata.items.user-data)' 2>/dev/null | grep -c 'bwgc' || true)
+	--format='value(metadata.items.user-data)' 2>/dev/null \
+	| grep -c "google-$DISK_NAME" || true)
 RESUME=0
 if [ "$ALREADY" = yes ] && [ "${HAVE_META:-0}" -eq 0 ]; then
 	cat >&2 <<EOF
 
-$MOUNT is mounted and holds a deployment, but this instance has no user-data
-metadata. A previous run copied the data and stopped before recording the
-layout.
+$MOUNT is mounted and holds a deployment, but this instance's user-data
+metadata does not name $DISK_NAME. Either a previous run stopped before
+recording the layout, or the metadata still names a disk you have replaced.
 
-That is not a finished migration. The mount is not declared anywhere, so the
-next reboot comes up without it and the vault starts against an empty
-directory.
+That is not a finished migration. What is recorded is what gets mounted on the
+next boot, so as it stands the instance reboots to no vault.
 
 Nothing needs copying again. What is left is to write the metadata, reboot, and
 check the mount comes back.
@@ -152,8 +156,8 @@ EOF
 elif [ "$ALREADY" = yes ]; then
 	cat >&2 <<EOF
 
-STOPPING: $MOUNT is already mounted, holds a deployment, and the layout is
-recorded in this instance's metadata. The migration is complete.
+STOPPING: $MOUNT is already mounted, holds a deployment, and the metadata
+records $DISK_NAME. The migration is complete.
 
 Running this script again would back up and copy from ~/bitwarden_gcloud, which
 is the stale pre-migration copy -- the running containers read from $MOUNT.

@@ -243,3 +243,16 @@ if printf '%s' "$upg" | grep -B3 'It is encrypted with BACKUP_ENCRYPTION_KEY' | 
 else
 	fail "the encryption notice is conditional" "it claims encryption unconditionally"
 fi
+
+# Iteration 10: the re-entry guard matched any bwgc metadata, so an instance
+# still naming a disk that had been replaced was reported as "The migration is
+# complete" while the recorded layout pointed at a disk that no longer exists,
+# and the documented repair was refused.
+assert_contains "$mig" 'grep -c "google-$DISK_NAME"' "the guard matches the disk this run is about"
+if printf '%s' "$mig" | grep -q "grep -c 'bwgc'"; then
+	fail "the guard does not match any bwgc metadata at all"
+else
+	pass "the guard does not match any bwgc metadata at all"
+fi
+assert_contains "$mig" 'metadata does not name $DISK_NAME' "says which disk the metadata is missing"
+assert_contains "$mig" 'records $DISK_NAME' "names the disk when it declares the migration complete"
