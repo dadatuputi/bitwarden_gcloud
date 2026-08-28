@@ -218,3 +218,19 @@ if printf '%s' "$upg" | grep -q 'DELETE_FIRST" -eq 1 ]; then'; then
 else
 	fail "the summary branches on the mode actually used"
 fi
+
+# Iteration 7: removing the encryption requirement left the rest of the script
+# assuming encryption. An unencrypted deployment writes bw_backup_*.tar.gz with
+# no .aes256 suffix, so the glob found nothing and the verify ran openssl over a
+# plain gzip and died on "bad decrypt" after the backup had already been taken.
+for f in migrate-to-data-disk.sh upgrade-cos.sh; do
+	body=$(cat "$ROOT/utilities/$f")
+	if printf '%s' "$body" | grep -q 'backups/\*\.aes256'; then
+		fail "$f: finds unencrypted archives too" "still globs only *.aes256"
+	else
+		pass "$f: finds unencrypted archives too"
+	fi
+	assert_contains "$body" 'bw_backup_*' "$f: globs by name, not by extension"
+	assert_contains "$body" '*.aes256)'   "$f: branches on whether the archive is encrypted"
+	assert_contains "$body" 'tar tzf /data/backups/' "$f: verifies a plain archive without openssl"
+done
