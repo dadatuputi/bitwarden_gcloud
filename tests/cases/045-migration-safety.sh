@@ -234,3 +234,12 @@ for f in migrate-to-data-disk.sh upgrade-cos.sh; do
 	assert_contains "$body" '*.aes256)'   "$f: branches on whether the archive is encrypted"
 	assert_contains "$body" 'tar tzf /data/backups/' "$f: verifies a plain archive without openssl"
 done
+
+# Iteration 8: the script told every user their downloaded backup was encrypted,
+# four lines after reporting "encrypted NO".
+assert_contains "$upg" 'It is NOT encrypted' "says so when the pulled backup is not encrypted"
+if printf '%s' "$upg" | grep -B3 'It is encrypted with BACKUP_ENCRYPTION_KEY' | grep -q 'BACKUP_ENC'; then
+	pass "the encryption notice is conditional"
+else
+	fail "the encryption notice is conditional" "it claims encryption unconditionally"
+fi
