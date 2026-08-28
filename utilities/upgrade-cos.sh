@@ -283,19 +283,25 @@ echo
 say "Step 1/7: back up and verify before touching anything"
 on_vm "$INSTANCE" "cd $MOUNT/bitwarden_gcloud && docker exec backup ash /backup.sh local"
 on_vm "$INSTANCE" "set -e; cd $MOUNT/bitwarden_gcloud; \
-  LATEST=\$(ls -t bitwarden/backups/*.aes256 2>/dev/null | head -1); \
+  LATEST=\$(ls -t bitwarden/backups/bw_backup_* 2>/dev/null | head -1); \
   [ -n \"\$LATEST\" ] || { echo 'no backup produced' >&2; exit 1; }; \
-  docker exec backup sh -c \"openssl enc -d -aes256 -salt -pbkdf2 \
-    -pass pass:\\\"\\\$BACKUP_ENCRYPTION_KEY\\\" -in /data/backups/\$(basename \$LATEST) \
-    | tar tzf - | grep -qx db.sqlite3\" \
-  && echo 'BACKUP_VERIFIED'"
+  case \$LATEST in \
+  *.aes256) \
+    docker exec backup sh -c \"openssl enc -d -aes256 -salt -pbkdf2 \
+      -pass pass:\\\"\\\$BACKUP_ENCRYPTION_KEY\\\" -in /data/backups/\$(basename \$LATEST) \
+      | tar tzf - | grep -qx db.sqlite3\" \
+    && echo 'BACKUP_VERIFIED' ;; \
+  *) \
+    docker exec backup sh -c \"tar tzf /data/backups/\$(basename \$LATEST) | grep -qx db.sqlite3\" \
+    && echo 'BACKUP_VERIFIED' ;; \
+  esac"
 
 # Keep a copy in this shell session. Not every deployment has rclone
 # configured, and this is usually run by hand, so a local copy is the one
 # rollback we can guarantee exists.
 LOCAL_BACKUP_DIR="${PWD}/bwgc-backups"
 mkdir -p "$LOCAL_BACKUP_DIR"
-REMOTE_BACKUP=$(on_vm "$INSTANCE" "ls -t $MOUNT/bitwarden_gcloud/bitwarden/backups/*.aes256 2>/dev/null | head -1" | tr -d '\r')
+REMOTE_BACKUP=$(on_vm "$INSTANCE" "ls -t $MOUNT/bitwarden_gcloud/bitwarden/backups/bw_backup_* 2>/dev/null | head -1" | tr -d '\r')
 if [ -n "$REMOTE_BACKUP" ]; then
 	gcloud compute scp "$INSTANCE:$REMOTE_BACKUP" "$LOCAL_BACKUP_DIR/" --zone "$ZONE"
 	echo "backup pulled to $LOCAL_BACKUP_DIR/$(basename "$REMOTE_BACKUP")"

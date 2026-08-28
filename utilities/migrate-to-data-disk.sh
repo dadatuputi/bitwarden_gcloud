@@ -296,20 +296,26 @@ on_vm '. ~/.bwgc-compose.sh; set -e; cd ~/bitwarden_gcloud; \
 say "Step 2/7: back up and verify"
 on_vm 'docker exec backup ash /backup.sh local'
 on_vm 'set -e; cd ~/bitwarden_gcloud; \
-  LATEST=$(ls -t bitwarden/backups/*.aes256 2>/dev/null | head -1); \
+  LATEST=$(ls -t bitwarden/backups/bw_backup_* 2>/dev/null | head -1); \
   [ -n "$LATEST" ] || { echo "no backup produced" >&2; exit 1; }; \
   echo "verifying $LATEST"; \
-  docker exec backup sh -c "openssl enc -d -aes256 -salt -pbkdf2 \
-    -pass pass:\"\$BACKUP_ENCRYPTION_KEY\" -in /data/backups/$(basename "$LATEST") \
-    | tar tzf - | grep -qx db.sqlite3" \
-  && echo "BACKUP_VERIFIED: archive decrypts and contains db.sqlite3"'
+  case "$LATEST" in \
+  *.aes256) \
+    docker exec backup sh -c "openssl enc -d -aes256 -salt -pbkdf2 \
+      -pass pass:\"\$BACKUP_ENCRYPTION_KEY\" -in /data/backups/$(basename "$LATEST") \
+      | tar tzf - | grep -qx db.sqlite3" \
+    && echo "BACKUP_VERIFIED: archive decrypts and contains db.sqlite3" ;; \
+  *) \
+    docker exec backup sh -c "tar tzf /data/backups/$(basename "$LATEST") | grep -qx db.sqlite3" \
+    && echo "BACKUP_VERIFIED: archive is unencrypted and contains db.sqlite3" ;; \
+  esac'
 
 # Pull it down now, not later. Everything from here stops containers, formats a
 # disk and reboots the instance; a backup that exists only on that instance is
 # not a backup during any of it.
 LOCAL_BACKUP_DIR="${PWD}/bwgc-backups"
 mkdir -p "$LOCAL_BACKUP_DIR"
-REMOTE_BACKUP=$(on_vm 'ls -t ~/bitwarden_gcloud/bitwarden/backups/*.aes256 2>/dev/null | head -1' | tr -d '\r')
+REMOTE_BACKUP=$(on_vm 'ls -t ~/bitwarden_gcloud/bitwarden/backups/bw_backup_* 2>/dev/null | head -1' | tr -d '\r')
 if [ -n "$REMOTE_BACKUP" ]; then
 	gcloud compute scp "$INSTANCE:$REMOTE_BACKUP" "$LOCAL_BACKUP_DIR/" --zone "$ZONE"
 	LOCAL_COPY="$LOCAL_BACKUP_DIR/$(basename "$REMOTE_BACKUP")"
