@@ -306,7 +306,11 @@ if [ -n "$REMOTE_BACKUP" ]; then
 	gcloud compute scp "$INSTANCE:$REMOTE_BACKUP" "$LOCAL_BACKUP_DIR/" --zone "$ZONE"
 	echo "backup pulled to $LOCAL_BACKUP_DIR/$(basename "$REMOTE_BACKUP")"
 	echo "KEEP THIS until the new instance is confirmed working from a real client."
-	echo "It is encrypted with BACKUP_ENCRYPTION_KEY from your .env. Without that key it is useless -- record it now."
+	if [ "$BACKUP_ENC" = yes ]; then
+		echo "It is encrypted with BACKUP_ENCRYPTION_KEY from your .env. Without that key it is useless -- record it now."
+	else
+		echo "It is NOT encrypted. Anyone who can read the file can read your vault."
+	fi
 else
 	echo "WARNING: could not locate a backup file to pull down." >&2
 	confirm "Continue without a local copy?"
