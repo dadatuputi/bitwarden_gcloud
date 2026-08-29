@@ -19,9 +19,9 @@ Behaviour is unchanged until `.env` is changed. `git pull` alone alters nothing.
 
 | Goal | Page |
 |---|---|
-| Move vault data off the boot disk. Prerequisite for the other two. | [Migrating to a Data Disk](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Migrating-to-a-Data-Disk) |
-| Replace an unsupported OS milestone | [Upgrading Container-Optimized OS](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Upgrading-Container-Optimized-OS) |
-| Close ports 80 and 443, retire four containers | [Switching to a Cloudflare Tunnel](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Switching-to-a-Cloudflare-Tunnel) |
+| (Required for the next steps) Move vault data off the boot disk. | [Migrating to a Data Disk](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Migrating-to-a-Data-Disk) |
+| (Recommended) Replace an unsupported OS milestone | [Upgrading Container-Optimized OS](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Upgrading-Container-Optimized-OS) |
+| (Recommended) Close ports 80 and 443, retire four containers | [Switching to a Cloudflare Tunnel](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Switching-to-a-Cloudflare-Tunnel) |
 
 Milestone support and backup status:
 
