@@ -118,6 +118,41 @@ write_files:
 
 # /var is mounted noexec, so every unit below hands its script to /bin/sh
 # rather than executing the path. execve on /var/lib fails with 203/EXEC.
+- path: /etc/profile.d/bwgc-link.sh
+  permissions: "0644"
+  owner: root
+  content: |
+    # Point ~/bitwarden_gcloud at the deployment for whoever is logging in.
+    #
+    # gcloud takes the ssh login name from the client machine rather than from
+    # the Google account, so one instance hands out a separate home directory
+    # per client, and only the login that ran the install has this symlink.
+    #
+    # Login shells only: ssh --command does not read /etc/profile, so
+    # link-homes.sh covers the homes that already exist at boot.
+    if [ -d "${_mount}/bitwarden_gcloud" ] && [ -w "\$HOME" ] && [ ! -e "\$HOME/bitwarden_gcloud" ]; then
+      ln -sfn "${_mount}/bitwarden_gcloud" "\$HOME/bitwarden_gcloud" 2>/dev/null || true
+    fi
+
+- path: /var/lib/bwgc/link-homes.sh
+  permissions: "0755"
+  owner: root
+  content: |
+    #!/usr/bin/env sh
+    # Symlink the deployment into every home present at boot. Homes are created
+    # on first ssh, so a login that has never connected is not covered here;
+    # /etc/profile.d/bwgc-link.sh catches those when they log in.
+    set -u
+    [ -d "${_mount}/bitwarden_gcloud" ] || exit 0
+    for h in /home/*; do
+      [ -d "\$h" ] || continue
+      case "\$h" in */chronos) continue ;; esac
+      [ -e "\$h/bitwarden_gcloud" ] && continue
+      u="\$(basename "\$h")"
+      ln -sfn "${_mount}/bitwarden_gcloud" "\$h/bitwarden_gcloud" 2>/dev/null || true
+      chown -h "\$u:\$u" "\$h/bitwarden_gcloud" 2>/dev/null || true
+    done
+
 - path: /etc/systemd/system/bwgc.service
   permissions: "0644"
   owner: root
@@ -193,5 +228,6 @@ runcmd:
 - systemctl enable --now bwgc.service
 - systemctl enable --now bwgc-supervise.timer
 - systemctl enable --now cos-update-reboot.timer
+- /bin/sh /var/lib/bwgc/link-homes.sh
 EOF
 }
