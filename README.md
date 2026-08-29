@@ -15,7 +15,16 @@ Free while egress stays under 1 GB per month and away from China, Hong Kong and 
 
 ## Existing deployment
 
-Behaviour is unchanged until `.env` is changed. `git pull` alone alters nothing.
+Your vault, your `.env` and your data are untouched by a pull.
+
+One thing does change on its own: `watchtower` was on by default and is now
+behind a compose profile, so it stops after a pull and image updates end
+silently. Put it back with `COMPOSE_PROFILES=watchtower` in `.env`, or leave it
+off and use `renovate.json`, which raises image updates as pull requests.
+[Operations](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Operations#automatic-image-updates)
+covers both.
+
+Everything else below is opt-in.
 
 | Goal | Page |
 |---|---|
