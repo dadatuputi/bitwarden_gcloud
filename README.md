@@ -62,9 +62,12 @@ Restrict it after you create it:
 $ chmod 600 .env
 ```
 
-The `backup` container mounts it read-only. Note that `BACKUP_ENV=true` will
-include `.env` in a backup, so do not enable that without also setting
-`BACKUP_ENCRYPTION_KEY`.
+The `backup` container mounts it read-only.
+
+`.env.template` ships `BACKUP_ENV=true`, so `.env` is inside every archive along
+with the admin token, the SMTP password and, on the tunnel path, the tunnel
+token. Either set `BACKUP_ENCRYPTION_KEY`, or set `BACKUP_ENV=false` and accept
+that a restore will not bring your settings back.
 
 ### Automatic image updates
 
@@ -289,7 +292,7 @@ Expect `db.sqlite3`, the four `rsa_key.*` files, and `.env` when
 Run the scheduled job by hand to confirm delivery works end to end:
 
 ```
-$ docker exec backup ash /backup.sh local,rclone
+$ docker exec backup ash /backup.sh local
 ```
 
 The method argument is required. Invoking `backup` with no argument creates the
