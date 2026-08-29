@@ -23,14 +23,6 @@ Behaviour is unchanged until `.env` is changed. `git pull` alone alters nothing.
 | (Recommended) Replace an unsupported OS milestone | [Upgrading Container-Optimized OS](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Upgrading-Container-Optimized-OS) |
 | (Recommended) Close ports 80 and 443, retire four containers | [Switching to a Cloudflare Tunnel](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Switching-to-a-Cloudflare-Tunnel) |
 
-Milestone support and backup status:
-
-```
-docker exec backup ash /backup.sh check
-```
-
-Changed defaults in `.env.template`, affecting only a newly created `.env`: `BACKUP=local` is set, and `BACKUP_EMAIL_NOTIFY` is commented out because enabling it without SMTP configured stops the backup script from running.
-
 ## Connectivity
 
 New installs use the tunnel. Both paths are supported.
