@@ -1,104 +1,75 @@
 # Bitwarden self-hosted on Google Cloud for Free
 
-Your own Bitwarden server, on hardware that costs nothing to run.
+[Vaultwarden](https://github.com/dani-garcia/vaultwarden) on a Google Cloud `e2-micro`, within the [Always Free](https://cloud.google.com/free/docs/free-cloud-features#compute) tier. Works with every official Bitwarden client.
 
-This puts [Vaultwarden](https://github.com/dani-garcia/vaultwarden), a lightweight Bitwarden-compatible server, on a Google Cloud `e2-micro`. That machine type is part of Google's [Always Free](https://cloud.google.com/free/docs/free-cloud-features#compute) tier, so a vault serving a household or a small team runs at no monthly cost. Every official Bitwarden client works against it: browser extensions, mobile apps, desktop, CLI.
+* HTTPS with no manual certificate renewal
+* Scheduled backups, optionally encrypted, to disk, e-mail or cloud storage
+* Weekly check for stopped backups and unsupported OS milestones
+* Vault data on its own persistent disk, so OS upgrades are a disk reattach
 
-Your vault lives on a disk you own, in a project you control, backed up on a schedule you set.
+Free while egress stays under 1 GB per month and away from China, Hong Kong and Australia.
 
-**[Start here: Installation](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation).** About an hour, most of it waiting.
+## New install
 
----
+[Installation](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation).
 
-## What you get
+## Existing deployment
 
-* Vaultwarden on a Google Cloud Always Free `e2-micro`
-* HTTPS, handled for you, with no certificate to renew by hand
-* Automatic backups, optionally encrypted, that can mail themselves to you or sync to cloud storage
-* A weekly check that tells you when a backup has quietly stopped or your OS has left support
-* Vault data on its own persistent disk, so replacing the operating system is a disk reattach rather than a data migration
+Behaviour is unchanged until `.env` is changed. `git pull` alone alters nothing.
 
-It stays free as long as you keep egress under 1 GB a month and away from China, Hong Kong and Australia. Picking a region near you is the main thing that achieves that.
+| Goal | Page |
+|---|---|
+| Move vault data off the boot disk. Prerequisite for the other two. | [Migrating to a Data Disk](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Migrating-to-a-Data-Disk) |
+| Replace an unsupported OS milestone | [Upgrading Container-Optimized OS](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Upgrading-Container-Optimized-OS) |
+| Close ports 80 and 443, retire four containers | [Switching to a Cloudflare Tunnel](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Switching-to-a-Cloudflare-Tunnel) |
 
-## Two ways to reach your vault
-
-New installs use the tunnel. Both are fully supported.
-
-| | Cloudflare Tunnel (default) | Caddy |
-|---|---|---|
-| Ports open to the internet | none | 80 and 443 |
-| TLS terminates at | Cloudflare's edge | your instance |
-| DNS | a CNAME the tunnel creates | an A record `ddns` keeps updated |
-| When Google changes the instance address | nothing happens | unreachable until DNS catches up |
-| Largest vault attachment | 100 MB | no limit |
-| Containers on a 1 GB instance | 3 | 6 |
-
-The tunnel is simpler to run and exposes nothing. The trade is that Cloudflare decrypts traffic at its edge; Bitwarden encrypts vault contents on your device first, so what they can see is metadata and authentication traffic, not your passwords. If you would rather nobody sit in that position, take the Caddy path.
-
-[How your vault is reached](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation#how-your-vault-is-reached) covers the decision in full.
-
----
-
-## What changed, and what you need to do
-
-This release adds the Cloudflare Tunnel path, moves vault data onto its own disk, and hands container startup to cloud-init. **Nothing changes on an existing deployment until you change it.** Find yourself below.
-
-### You are installing for the first time
-
-Follow [Installation](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation). You get the tunnel, the data disk and the new startup arrangement by default, and there is nothing to migrate.
-
-### You have a working vault and do not want to touch it
-
-Do nothing. Your deployment keeps running exactly as it is. The tunnel is selected by one line in `.env` that you do not have, and without it `docker-compose.yml` behaves as it always has.
-
-One thing is worth doing regardless, because it is the failure people discover too late:
+Milestone support and backup status:
 
 ```
 docker exec backup ash /backup.sh check
 ```
 
-That reports whether a backup has actually run recently and whether your OS milestone still gets security patches. Both fail silently otherwise. See [Backup](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Backup#status-checks).
+Changed defaults in `.env.template`, affecting only a newly created `.env`: `BACKUP=local` is set, and `BACKUP_EMAIL_NOTIFY` is commented out because enabling it without SMTP configured stops the backup script from running.
 
-### You pull from git occasionally
+## Connectivity
 
-`git pull` brings in `docker-compose.tunnel.yml` and the utility scripts and changes nothing by itself. Your next `docker-compose up -d` produces the same six containers as before.
+New installs use the tunnel. Both paths are supported.
 
-Two settings changed their shipped defaults, which only affects a `.env` you create fresh from the template: `BACKUP=local` is now on, and `BACKUP_EMAIL_NOTIFY` is now commented out, because leaving it on with no SMTP configured stopped the backup script from running at all.
+| | Cloudflare Tunnel (default) | Caddy |
+|---|---|---|
+| Ports open to the internet | none | 80 and 443 |
+| TLS terminates at | Cloudflare's edge | the instance |
+| DNS | CNAME created by the tunnel | A record maintained by `ddns` |
+| Instance address changes | no effect | unreachable until DNS updates |
+| Maximum attachment size | 100 MB | unlimited |
+| Containers | 3 | 6 |
 
-### You want the new arrangement
+On the tunnel path Cloudflare decrypts traffic at its edge. Vault contents are encrypted client-side before transmission; metadata and authentication traffic are not.
 
-In this order:
-
-1. **[Migrate to a data disk](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Migrating-to-a-Data-Disk).** Once. Your vault moves onto a disk that survives the instance, and OS upgrades stop being data migrations. This is the prerequisite for everything below.
-2. **[Upgrade Container-Optimized OS](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Upgrading-Container-Optimized-OS)** if your milestone has left support. The check above tells you.
-3. **[Switch to a Cloudflare Tunnel](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Switching-to-a-Cloudflare-Tunnel)** if you want it. This closes both open ports and retires four containers. It is reversible, and that page documents going back.
-
-Each page states what it changes, what it costs you in downtime, and what happens if you stop partway.
-
----
+[How your vault is reached](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation#how-your-vault-is-reached).
 
 ## Documentation
 
 | | |
 |---|---|
-| [Installation](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation) | Build a vault from nothing |
-| [Cloud Shell Setup](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Cloud-Shell-Setup) | The environment every other page assumes |
-| [Backup](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Backup) | Configuring backups, and restoring one |
+| [Installation](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation) | Build from nothing |
+| [Cloud Shell Setup](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Cloud-Shell-Setup) | Environment assumed by every other page |
+| [Backup](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Backup) | Configuration and restore |
 | [Operations](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Operations) | Secrets, image updates, log growth, SSH, resource limits |
 | [Migrating to a Data Disk](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Migrating-to-a-Data-Disk) | Move the vault off the boot disk |
 | [Upgrading Container-Optimized OS](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Upgrading-Container-Optimized-OS) | Replace the OS, keep the data |
-| [Switching to a Cloudflare Tunnel](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Switching-to-a-Cloudflare-Tunnel) | Move an existing vault onto a tunnel, or back |
-| [Instance Metadata](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Instance-Metadata) | What the cloud-config contains and why |
+| [Switching to a Cloudflare Tunnel](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Switching-to-a-Cloudflare-Tunnel) | Move to a tunnel, or back to Caddy |
+| [Instance Metadata](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Instance-Metadata) | Contents of the cloud-config |
 
 ## Feature Container Projects
 
-This project uses containers maintained in other projects. If you have an issue to report for one of these features, use that project's issue tracker.
+Containers maintained in other projects. Report issues there.
 
-* [Backup](https://github.com/dadatuputi/bwgc_backup) - Provides automatic backup services to this project.
-* [Caddy](https://github.com/dadatuputi/bwgc_caddy) - Acts as the reverse proxy and handles TLS certificate renewals.
-* [Countryblock](https://github.com/dadatuputi/bwgc_countryblock) - Handles IP Tables block lists to block user-defined countries.
+* [Backup](https://github.com/dadatuputi/bwgc_backup) - automatic backup services
+* [Caddy](https://github.com/dadatuputi/bwgc_caddy) - reverse proxy and TLS certificate renewal
+* [Countryblock](https://github.com/dadatuputi/bwgc_countryblock) - IP Tables block lists by country
 
-`cloudflared` on the tunnel path, and `ddclient` and `fail2ban` on the Caddy path, come from [cloudflare/cloudflared](https://github.com/cloudflare/cloudflared), [linuxserver/ddclient](https://github.com/linuxserver/docker-ddclient) and [crazymax/fail2ban](https://github.com/crazy-max/docker-fail2ban) upstream, and are not maintained here.
+`cloudflared`, `ddclient` and `fail2ban` come from [cloudflare/cloudflared](https://github.com/cloudflare/cloudflared), [linuxserver/ddclient](https://github.com/linuxserver/docker-ddclient) and [crazymax/fail2ban](https://github.com/crazy-max/docker-fail2ban), and are not maintained here.
 
 ## Changelog
 Unreleased
