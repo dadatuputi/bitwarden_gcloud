@@ -1,28 +1,94 @@
 # Bitwarden self-hosted on Google Cloud for Free
 
----
+[Vaultwarden](https://github.com/dani-garcia/vaultwarden) on a Google Cloud `e2-micro`, within the [Always Free](https://cloud.google.com/free/docs/free-cloud-features#compute) tier. Works with every official Bitwarden client.
 
-## Features
+* HTTPS with no manual certificate renewal
+* Scheduled backups, optionally encrypted, to disk, e-mail or cloud storage
+* Weekly check for stopped backups and unsupported OS milestones
+* Vault data on its own persistent disk, so OS upgrades are a disk reattach
 
-* Bitwarden self-hosted (via Vaultwarden) on Google Cloud 'always free' e2-micro tier 
-* Automatic https certificate management through Caddy 2 proxy
-* Dynamic DNS updates through ddclient
-* Blocking brute-force attempts with fail2ban
-* Country-wide blocking through iptables and ipset
-* Automatic backups
+Free while egress stays under 1 GB per month and away from China, Hong Kong and Australia.
+
+## New install
+
+[Installation](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation).
+
+## Existing deployment
+
+Behaviour is unchanged until `.env` is changed. `git pull` alone alters nothing.
+
+| Goal | Page |
+|---|---|
+| (Required for the next steps) Move vault data off the boot disk. | [Migrating to a Data Disk](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Migrating-to-a-Data-Disk) |
+| (Recommended) Replace an unsupported OS milestone | [Upgrading Container-Optimized OS](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Upgrading-Container-Optimized-OS) |
+| (Recommended) Close ports 80 and 443, retire four containers | [Switching to a Cloudflare Tunnel](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Switching-to-a-Cloudflare-Tunnel) |
+
+## Connectivity
+
+New installs use the tunnel. Both paths are supported.
+
+| | Cloudflare Tunnel (default) | Caddy |
+|---|---|---|
+| Ports open to the internet | none | 80 and 443 |
+| TLS terminates at | Cloudflare's edge | the instance |
+| DNS | CNAME created by the tunnel | A record maintained by `ddns` |
+| Instance address changes | no effect | unreachable until DNS updates |
+| Maximum attachment size | 100 MB | unlimited |
+| Containers | 3 | 6 |
+
+On the tunnel path Cloudflare decrypts traffic at its edge. Vault contents are encrypted client-side before transmission; metadata and authentication traffic are not.
+
+[How your vault is reached](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation#how-your-vault-is-reached).
+
+## Documentation
+
+| | |
+|---|---|
+| [Installation](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation) | Build from nothing |
+| [Cloud Shell Setup](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Cloud-Shell-Setup) | Environment assumed by every other page |
+| [Backup](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Backup) | Configuration and restore |
+| [Operations](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Operations) | Secrets, image updates, log growth, SSH, resource limits |
+| [Migrating to a Data Disk](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Migrating-to-a-Data-Disk) | Move the vault off the boot disk |
+| [Upgrading Container-Optimized OS](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Upgrading-Container-Optimized-OS) | Replace the OS, keep the data |
+| [Switching to a Cloudflare Tunnel](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Switching-to-a-Cloudflare-Tunnel) | Move to a tunnel, or back to Caddy |
+| [Instance Metadata](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Instance-Metadata) | Contents of the cloud-config |
 
 ## Feature Container Projects
 
-This project uses containers maintained in other projects. If you have an issue to report for one of these features, use that project's issue tracker:
+Containers maintained in other projects. Report issues there.
 
-* [Backup](https://github.com/dadatuputi/bwgc_backup) - Provides automatic backup services to this project.
-* [Caddy](https://github.com/dadatuputi/bwgc_caddy) - Acts as the reverse proxy and handles TLS certificate renewals.
-* [Countryblock](https://github.com/dadatuputi/bwgc_countryblock) - Handles IP Tables block lists to block user-defined countries.
+* [Backup](https://github.com/dadatuputi/bwgc_backup) - automatic backup services
+* [Caddy](https://github.com/dadatuputi/bwgc_caddy) - reverse proxy and TLS certificate renewal
+* [Countryblock](https://github.com/dadatuputi/bwgc_countryblock) - IP Tables block lists by country
 
-## Installation
-Follow the [guide in the wiki](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation) to install and configure Bitwarden self-hosted on Google Cloud
+`cloudflared`, `ddclient` and `fail2ban` come from [cloudflare/cloudflared](https://github.com/cloudflare/cloudflared), [linuxserver/ddclient](https://github.com/linuxserver/docker-ddclient) and [crazymax/fail2ban](https://github.com/crazy-max/docker-fail2ban), and are not maintained here.
 
 ## Changelog
+Unreleased
+
+* Cloudflare Tunnel is the default for new installs. `COMPOSE_FILE` in `.env`
+  selects it; `proxy`, `ddns`, `countryblock` and `fail2ban` do not run on that
+  path. Existing Caddy deployments are unaffected until they set it
+* Vault data moves to its own persistent disk
+  (`utilities/migrate-to-data-disk.sh`), and OS milestone upgrades become a disk
+  reattach (`utilities/upgrade-cos.sh`)
+* Startup moves to cloud-init: `bwgc.service` starts the stack once the data
+  disk is mounted, and `bwgc-supervise.timer` restarts what stops
+
+* Security headers in `caddy/Caddyfile` now apply to every path. The `header /`
+  matcher was an exact match, so `/admin` and `/api/*` were served without
+  `X-Frame-Options` and `X-Content-Type-Options`
+* `watchtower` is now opt-in behind a compose profile; added `renovate.json` as
+  the reviewed replacement
+* Removed the Docker socket mount from `backup`; restore now needs the operator
+  to stop `bitwarden` first
+* Removed `privileged: true` from `countryblock`; `NET_ADMIN` and `NET_RAW` are
+  sufficient
+* Narrowed the `fail2ban` mounts: dropped the host-wide `/var/log` mount
+* Added `mem_limit` and `pids_limit` to every service
+* Added a systemd timer that applies staged COS updates; deprecated
+  `utilities/reboot-on-update.sh` in favour of it
+
 2.0.3 - 21 May 2025
 
 * Added backup restore feature to backup image, [documented](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Backup#backup-restore)

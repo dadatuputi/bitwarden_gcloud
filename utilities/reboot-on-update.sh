@@ -1,8 +1,10 @@
 #!/usr/bin/env sh
 #
-# DEPRECATED. Nothing invokes this script: Container-Optimized OS ships no cron
-# and no unit referenced it, so it never ran unattended. It is kept for
-# reference only.
+# Superseded by the cos-update-reboot timer in the instance's cloud-config.
+#
+# On instances configured through GCE startup-script metadata this still runs at
+# every boot, holding a blocking update_engine_client for the life of the boot.
+# migrate-to-data-disk.sh removes that metadata key.
 #
 # Use the systemd timer instead:  ./utilities/install-cos-update-reboot.sh
 # See README-cos-updates.md.

@@ -1,0 +1,110 @@
+#!/usr/bin/env sh
+#
+# Fake gcloud for the test harness. Records every invocation to $GCLOUD_LOG,
+# one shell-quoted line per call, and returns canned output so the scripts
+# under test can run to completion without touching Google Cloud.
+#
+# Behaviour is steered by environment variables set by the test case:
+#   MOCK_FAIL_CREATE=1     make "instances create" fail
+#   MOCK_UNREACHABLE_HOST  name of one host whose "compute ssh" always fails,
+#                          used to simulate a replacement that never boots
+#   MOCK_LIVE_FAMILY=129   which cos-<n>-lts family resolves; others 404
+#   MOCK_CURRENT_MILESTONE the value /etc/os-release reports on the old host
+
+: "${GCLOUD_LOG:=/dev/null}"
+: "${MOCK_LIVE_FAMILY:=129}"
+: "${MOCK_CURRENT_MILESTONE:=109}"
+
+printf '%s\n' "$*" >> "$GCLOUD_LOG"
+
+case "$1 $2" in
+"compute ssh")
+	[ -n "${MOCK_UNREACHABLE_HOST:-}" ] && [ "$3" = "$MOCK_UNREACHABLE_HOST" ] && exit 255
+	# The command being run on the VM is the argument after --command.
+	CMD=""
+	while [ $# -gt 0 ]; do
+		[ "$1" = "--command" ] && { CMD="$2"; break; }
+		shift
+	done
+
+	# Every remote command is written to its own file so the suite can parse
+	# each one with a real shell. Quoting faults in these strings have shipped
+	# repeatedly; nothing local sees inside them.
+	if [ -n "${REMOTE_CMD_DIR:-}" ] && [ -n "$CMD" ]; then
+		mkdir -p "$REMOTE_CMD_DIR"
+		printf '%s' "$CMD" > "$REMOTE_CMD_DIR/cmd-$$-$(od -An -N2 -tu2 </dev/urandom | tr -d ' ').sh"
+	fi
+	case "$CMD" in
+	*"mountpoint -q"*)
+		# Absent for the first MOCK_MOUNT_DELAY polls, then present.
+		_n=$(cat /tmp/bwgc-mountpolls 2>/dev/null || echo 0)
+		_n=$((_n + 1)); printf '%s' "$_n" > /tmp/bwgc-mountpolls
+		[ "$_n" -le "${MOCK_MOUNT_DELAY:-0}" ] && exit 1
+		exit 0
+		;;
+	*"is-active bwgc.service"*)
+		# cloud-init brings the stack up; report it active after
+		# MOCK_STACK_DELAY polls so the wait loop can be exercised.
+		_s=$(cat /tmp/bwgc-stackpolls 2>/dev/null || echo 0)
+		_s=$((_s + 1)); printf '%s' "$_s" > /tmp/bwgc-stackpolls
+		if [ "$_s" -le "${MOCK_STACK_DELAY:-0}" ]; then printf 'activating\n'; else printf 'active\n'; fi
+		;;
+	*"os-release"*)      printf '%s\n' "$MOCK_CURRENT_MILESTONE" ;;
+	*"pwd"*)             printf '/home/tester/bitwarden_gcloud\n' ;;
+	*"backups/*.aes256"*) printf '/mnt/disks/bwgc/bitwarden_gcloud/bitwarden/backups/bw_backup_1970-01-01-000000.tar.gz.aes256\n' ;;
+	*"DOMAIN="*)         printf 'vault.example.test\n' ;;
+	*"backup.sh"*)       printf 'INFO: Backup to local completed\nINFO: Backup to rclone completed\n' ;;
+	*"BACKUP_VERIFIED"*|*"db.sqlite3"*) printf 'BACKUP_VERIFIED\n' ;;
+	*"docker ps"*)       printf 'bitwarden\tUp 20 seconds (healthy)\nproxy\tUp 20 seconds\n' ;;
+	*)                   printf 'ok\n' ;;
+	esac
+	exit 0
+	;;
+"compute images")
+	case "$3" in
+	describe-from-family)
+		# $4 is cos-<n>-lts
+		want="cos-${MOCK_LIVE_FAMILY}-lts"
+		[ "$4" = "$want" ] && { printf '%s-19506-299-161\n' "$want"; exit 0; }
+		echo "ERROR: family $4 not found" >&2
+		exit 1
+		;;
+	esac
+	exit 0
+	;;
+"compute instances")
+	case "$3" in
+	create) [ "${MOCK_FAIL_CREATE:-0}" = "1" ] && { echo "ERROR: ZONE_RESOURCE_POOL_EXHAUSTED" >&2; exit 1; } ;;
+	describe)
+		# Answer by the --format asked for, so carry-over of tags, scopes and
+		# service account is actually exercised rather than silently skipped.
+		FMT=""
+		for a in "$@"; do case "$a" in --format=*) FMT="${a#--format=}" ;; esac; done
+		case "$FMT" in
+		*tags.items*)              printf '%s\n' "${MOCK_TAGS-http-server;https-server}" ;;
+		*scopes*)                  printf '%s\n' "${MOCK_SCOPES-https://www.googleapis.com/auth/compute.readonly}" ;;
+		*serviceAccounts*email*)   printf '%s\n' "${MOCK_SA-123-compute@developer.gserviceaccount.com}" ;;
+		*labels*)                  printf '%s\n' "${MOCK_LABELS-env;prod}" ;;
+		*machineType*)             printf '%s\n' "${MOCK_MACHINE-e2-small}" ;;
+		*network.basename*)        printf '%s\n' "${MOCK_NETWORK-default}" ;;
+		*subnetwork*)              printf '%s\n' "${MOCK_SUBNET-default}" ;;
+		*natIP*)                   printf '%s\n' "${MOCK_NATIP-35.1.2.3}" ;;
+		*status*)                  printf 'RUNNING\n' ;;
+		*)                         printf '\n' ;;
+		esac
+		;;
+	esac
+	exit 0
+	;;
+"compute disks")
+	case "$3" in
+	describe) [ "${MOCK_DISK_EXISTS:-0}" = "1" ] || exit 1 ;;
+	esac
+	exit 0
+	;;
+"compute addresses")
+	[ "$3" = list ] && printf '%s\n' "${MOCK_RESERVED_NAME-vault-static-ip}"
+	exit 0
+	;;
+*) exit 0 ;;
+esac

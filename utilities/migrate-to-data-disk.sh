@@ -119,8 +119,25 @@ confirm() {
 }
 
 
-REPO_DIR=$(on_vm 'cd ~/bitwarden_gcloud >/dev/null 2>&1 && pwd' || true)
-[ -n "$REPO_DIR" ] || { echo "could not find ~/bitwarden_gcloud on $INSTANCE" >&2; exit 1; }
+# Look on the data disk before the home directory. gcloud takes the ssh username
+# from the local machine, so connecting from a different machine than the one
+# that installed lands in a different home, and ~/bitwarden_gcloud is absent
+# there even on a migrated instance. Explicit precedence rather than a glob:
+# ls sorts /home ahead of /mnt.
+REPO_DIR=$(on_vm "if [ -d $MOUNT/bitwarden_gcloud ]; then cd $MOUNT/bitwarden_gcloud && pwd -P; elif [ -d ~/bitwarden_gcloud ]; then cd ~/bitwarden_gcloud && pwd -P; fi" | tr -d '\r' || true)
+if [ -z "$REPO_DIR" ]; then
+	cat >&2 <<EOF
+could not find a deployment on $INSTANCE
+
+Looked in $MOUNT/bitwarden_gcloud and in ~/bitwarden_gcloud for the ssh user
+gcloud connected as. That user comes from your local username, not your Google
+account, so a deployment installed from another machine is in another home
+directory. Check:
+
+    gcloud compute ssh $INSTANCE --zone $ZONE --command 'whoami; ls -d /home/*/bitwarden_gcloud 2>/dev/null'
+EOF
+	exit 1
+fi
 
 install_compose_helper
 

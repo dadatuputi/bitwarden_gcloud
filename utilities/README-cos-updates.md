@@ -10,7 +10,7 @@ Two different problems, with two different mechanisms.
 A milestone that has stopped shipping builds needs the second one. The timer
 will run correctly and find nothing, indefinitely.
 
-## Nothing here can be installed onto the instance
+## Where the configuration lives
 
 On Container-Optimized OS, `/etc` is a tmpfs overlay. Files written to
 `/etc/systemd/system` work until the first reboot and then disappear. So does
@@ -19,7 +19,7 @@ placed there cannot run either.
 
 Google's documented mechanism is **cloud-init**, supplied through the
 instance's `user-data` metadata and reapplied on every boot. Everything this
-directory configures — the reboot timer and the vault data disk mount — is
+directory configures, the reboot timer and the vault data disk mount, is
 declared there.
 
 `lib-bwgc-cloudinit.sh` generates that cloud-config. The other scripts source
@@ -45,7 +45,7 @@ journalctl -u cos-update-reboot.service --no-pager | tail -20
 With nothing staged, expect `nothing staged, not rebooting` and a clean exit.
 A real end-to-end test needs a genuinely staged update, which cannot be forced.
 
-## About the old `reboot-on-update.sh`
+## `reboot-on-update.sh`
 
 `reboot-on-update.sh` blocks on `update_engine_client
 --block_until_reboot_is_needed` and then calls `shutdown -r`.
