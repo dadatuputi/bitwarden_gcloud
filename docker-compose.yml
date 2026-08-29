@@ -214,7 +214,12 @@ services:
     # Watchtower will pull down your new image, gracefully shut down your existing container
     # and restart it with the same options that were used when it was deployed initially
     # https://github.com/nicholas-fedor/watchtower
-    image: nickfedor/watchtower
+    #
+    # Pinned rather than floating. This container decides when everything else
+    # updates, so it should not silently update itself. Renovate raises a PR when
+    # a new release appears, and renovate.json sets pinDigests, which needs an
+    # explicit tag to work from.
+    image: nickfedor/watchtower:1.21.2
     restart: ${BWGC_RESTART_POLICY:-always}
     container_name: watchtower
     mem_limit: 96m
