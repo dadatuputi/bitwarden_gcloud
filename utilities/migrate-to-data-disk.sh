@@ -106,6 +106,12 @@ BWGCEOF
 install_compose_helper() {
 	compose_helper_body | gcloud compute ssh "$INSTANCE" --zone "$ZONE" \
 		--command "cat > $COMPOSE_HELPER" >/dev/null
+	# Hook it into ~/.bashrc as well. Writing the file alone covers
+	# ssh --command, which sources it explicitly, but leaves an interactive
+	# shell reporting "docker-compose: command not found" with the file sitting
+	# there. Idempotent.
+	gcloud compute ssh "$INSTANCE" --zone "$ZONE" --command \
+		'grep -q bwgc-compose.sh ~/.bashrc 2>/dev/null || printf "%s\n" "if [ -f ~/.bwgc-compose.sh ]; then" ". ~/.bwgc-compose.sh" "fi" >> ~/.bashrc' >/dev/null 2>&1 || true
 }
 
 say() { printf '\n=== %s\n' "$1"; }

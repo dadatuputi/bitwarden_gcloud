@@ -134,6 +134,14 @@ write_files:
       ln -sfn "${_mount}/bitwarden_gcloud" "\$HOME/bitwarden_gcloud" 2>/dev/null || true
     fi
 
+    # Load the docker-compose shim. The maintenance scripts write this file so
+    # that ssh --command can source it, but they do not touch ~/.bashrc, so an
+    # interactive shell would otherwise report "command not found" despite the
+    # file being present.
+    if [ -f "\$HOME/.bwgc-compose.sh" ]; then
+      . "\$HOME/.bwgc-compose.sh"
+    fi
+
 - path: /var/lib/bwgc/link-homes.sh
   permissions: "0755"
   owner: root
