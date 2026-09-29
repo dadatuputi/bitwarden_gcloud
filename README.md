@@ -7,7 +7,7 @@
 * Weekly check for stopped backups and unsupported OS milestones
 * Vault data on its own persistent disk, so OS upgrades are a disk reattach
 
-Free while egress stays under 1 GB per month and away from China, Hong Kong and Australia.
+Free on the Caddy path while egress stays under 1 GB per month and away from China and Australia, the two destinations Google's free tier excludes (`countryblock` blocks those and Hong Kong by default). The Cloudflare Tunnel path costs a little every month: see [Connectivity](#connectivity).
 
 ## New install
 
@@ -30,22 +30,49 @@ Everything else below is opt-in.
 |---|---|
 | (Required for the next steps) Move vault data off the boot disk. | [Migrating to a Data Disk](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Migrating-to-a-Data-Disk) |
 | (Recommended) Replace an unsupported OS milestone | [Upgrading Container-Optimized OS](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Upgrading-Container-Optimized-OS) |
-| (Recommended) Close ports 80 and 443, retire four containers | [Switching to a Cloudflare Tunnel](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Switching-to-a-Cloudflare-Tunnel) |
+| Close ports 80 and 443 and retire four containers, in exchange for a small monthly egress charge | [Switching to a Cloudflare Tunnel](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Switching-to-a-Cloudflare-Tunnel) |
 
 ## Connectivity
 
-New installs use the tunnel. Both paths are supported.
+Caddy is the default and the recommended path. The tunnel is a supported
+alternative that is not free.
 
-| | Cloudflare Tunnel (default) | Caddy |
+| | Caddy (default) | Cloudflare Tunnel |
 |---|---|---|
-| Ports open to the internet | none | 80 and 443 |
-| TLS terminates at | Cloudflare's edge | the instance |
-| DNS | CNAME created by the tunnel | A record maintained by `ddns` |
-| Instance address changes | no effect | unreachable until DNS updates |
-| Maximum attachment size | 100 MB | unlimited |
-| Containers | 3 | 6 |
+| Monthly cost on the free tier | none: egress within the allowance, `countryblock` keeps the non-free destinations off the bill | small but non-zero: every byte the vault sends is carrier-peering egress, about $0.10 to $0.20 a month observed for one user |
+| Ports open to the internet | 80 and 443 | none |
+| TLS terminates at | the instance | Cloudflare's edge |
+| DNS | A record maintained by `ddns` | CNAME created by the tunnel |
+| Instance address changes | unreachable until DNS updates | no effect |
+| Maximum attachment size | unlimited | 100 MB |
+| Containers | 6 | 3 |
 
 On the tunnel path Cloudflare decrypts traffic at its edge. Vault contents are encrypted client-side before transmission; metadata and authentication traffic are not.
+
+### What the free tier includes for network traffic
+
+From Google's [free tier page](https://cloud.google.com/free/docs/free-cloud-features#compute) and [network pricing](https://cloud.google.com/network-connectivity/pricing), checked September 2026. Google changes both, so check them before you rely on a number here.
+
+* 1 GB per month of outbound data transfer from North American regions to all
+  destinations except China and Australia. Those two are billed from the first
+  byte, which is what `countryblock` exists to prevent on the Caddy path.
+* The allowance is per billing account, not per project or per instance.
+* Data transfer to networks Google reaches by Direct or Carrier Peering is a
+  separate SKU, "Network Data Transfer Out via Carrier Peering Network", with
+  no free allowance. Cloudflare's edge is such a network, so on the tunnel path
+  every byte the vault sends (client syncs, web vault assets, `cloudflared`
+  keepalives) is billed. On the Caddy path responses go to your clients' ISPs
+  as ordinary internet egress, inside the allowance.
+* The same charge applies on the Caddy path if the DNS record is proxied
+  through Cloudflare (the orange cloud). Keep it DNS-only: see
+  [DDNS](https://github.com/dadatuputi/bitwarden_gcloud/wiki/DDNS#cloudflare).
+* Inbound data transfer is free, and so is data transfer to Google services.
+
+Observed on one deployment with one user, September 2026: 1.37 GiB on the SKU
+"Network Data Transfer Out via Carrier Peering Network - Americas Based", $0.11,
+which is about $0.08 per GiB, while every other line on the bill netted to
+zero. To check your own: Billing, Reports, group by SKU, and look for "Carrier
+Peering".
 
 [How your vault is reached](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation#how-your-vault-is-reached).
 
@@ -75,7 +102,14 @@ Containers maintained in other projects. Report issues there.
 ## Changelog
 Unreleased
 
-* Cloudflare Tunnel is the default for new installs. `COMPOSE_FILE` in `.env`
+* 29 September 2026: Caddy is the recommended path again, and the tunnel is a
+  documented alternative. Google bills egress to Cloudflare's edge on the
+  carrier-peering SKU ("Network Data Transfer Out via Carrier Peering Network"),
+  which has no free allowance, so a tunnel deployment is not free: about $0.10
+  a month for one user, scaling with traffic. Nothing in the compose files
+  changes; `COMPOSE_FILE` still selects the tunnel, and a deployment on either
+  path keeps working as it did. See [Connectivity](#connectivity)
+* Cloudflare Tunnel was made the default for new installs (reversed above). `COMPOSE_FILE` in `.env`
   selects it; `proxy`, `ddns`, `countryblock` and `fail2ban` do not run on that
   path. Existing Caddy deployments are unaffected until they set it
 * Vault data moves to its own persistent disk

@@ -14,6 +14,11 @@
 # own. That retires four services rather than one, and each is disabled here by
 # assigning it to a profile that is never enabled -- compose profiles are
 # additive, so this is how an overlay removes a service.
+#
+# This path is not free: Google bills egress to Cloudflare's edge on the
+# carrier-peering SKU, which has no free-tier allowance (about $0.08/GiB on
+# one deployment's bill). See the Connectivity section of the README before
+# selecting it.
 
 services:
 
