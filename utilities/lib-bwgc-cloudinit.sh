@@ -10,6 +10,29 @@
 #
 # Usage:  emit_cloud_config <disk-name> <mount-point> <reboot-time-hhmm>
 
+# The permission check. The cloud-config installs it as check-secrets.sh,
+# which refuses to start the stack when it fails, and the maintenance scripts
+# pipe it to the instance before they change anything. Expects DIR, the
+# deployment directory.
+#
+# Heredoc body is quoted, so nothing in it is expanded locally.
+check_secrets_body() {
+	cat <<'BWGCEOF'
+# On the data disk nothing above the deployment is private, so the directory
+# must be closed to other users: it holds the vault database and its signing
+# key. .env, which holds the admin token and the SMTP and backup credentials,
+# must be 600. rclone and ddclient already write their own files that way.
+OPEN=$(
+  find "$DIR" -maxdepth 0 -perm /o=rwx -printf 'bwgc: other users can enter %p\n' 2>/dev/null
+  find -H "$DIR/.env" -perm /go=rwx -printf 'bwgc: other users can read %p\n' 2>/dev/null
+)
+[ -z "$OPEN" ] && exit 0
+echo "$OPEN" >&2
+echo "bwgc: refusing to start the stack. See \"Keeping the deployment private\" in utilities/README-cos-updates.md" >&2
+exit 1
+BWGCEOF
+}
+
 emit_cloud_config() {
 	_disk="$1"
 	_mount="$2"
@@ -75,6 +98,7 @@ write_files:
       echo "bwgc: no deployment at \$MOUNT/bitwarden_gcloud" >&2
       exit 1
     fi
+    sh /var/lib/bwgc/check-secrets.sh || exit 1
     echo "bwgc: recreating the stack against \$MOUNT"
     sh /var/lib/bwgc/compose.sh down --remove-orphans
     sh /var/lib/bwgc/compose.sh up -d
@@ -92,7 +116,16 @@ write_files:
     MOUNT=${_mount}
     mountpoint -q "\$MOUNT" || exit 0
     [ -f "\$MOUNT/bitwarden_gcloud/docker-compose.yml" ] || exit 0
+    sh /var/lib/bwgc/check-secrets.sh || exit 1
     sh /var/lib/bwgc/compose.sh up -d
+
+- path: /var/lib/bwgc/check-secrets.sh
+  permissions: "0755"
+  owner: root
+  content: |
+    #!/usr/bin/env sh
+    DIR=${_mount}/bitwarden_gcloud
+$(check_secrets_body | sed 's/^/    /')
 
 - path: /var/lib/bwgc/cos-update-reboot.sh
   permissions: "0755"

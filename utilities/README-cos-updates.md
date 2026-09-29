@@ -25,6 +25,35 @@ declared there.
 `lib-bwgc-cloudinit.sh` generates that cloud-config. The other scripts source
 it, so there is one definition rather than several that drift.
 
+## Keeping the deployment private
+
+The deployment holds the vault database, its signing key and `.env`, with the
+admin token and the SMTP and backup credentials. Under the home directory
+nothing else could reach them. On the data disk, `/mnt/disks/bwgc` is readable
+by every local user, so the deployment's own permissions are all that keeps
+them private. A clone, and a `.env` copied from `.env.template`, are readable by
+everyone.
+
+The stack therefore refuses to start, at boot and at every supervisor run,
+while other users can enter the deployment directory or `.env` is not `600`.
+`migrate-to-data-disk.sh` and `upgrade-cos.sh` check the same before they
+change anything, and stop with nothing done. Set it once, before migrating or
+upgrading:
+
+```sh
+cd ~/bitwarden_gcloud
+chmod o= .
+chmod 600 .env
+```
+
+`bitwarden/rclone/rclone.conf` and `ddns/ddclient.conf` also hold credentials;
+rclone and ddclient write them `600` themselves. When the stack does not come
+up, the reason is in the journal:
+
+```sh
+journalctl -u bwgc.service -u bwgc-supervise.service --no-pager | grep bwgc:
+```
+
 ## Install the update timer
 
 ```sh

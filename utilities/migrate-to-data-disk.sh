@@ -278,6 +278,12 @@ Nothing has been changed.
 EOF
 	exit 1
 fi
+# The copy keeps these modes, and on the data disk nothing above the
+# deployment is private any more.
+if ! check_secrets_body | on_vm "sudo env DIR=$REPO_DIR sh -s"; then
+	echo "Nothing has been changed." >&2
+	exit 1
+fi
 # The plan is printed last, after the checks, so it never advertises work
 # this run is not going to do -- creating a disk on a host that already has
 # one, for instance -- and so a reader can see the prerequisites were

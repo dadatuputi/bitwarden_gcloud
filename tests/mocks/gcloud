@@ -10,6 +10,8 @@
 #                          used to simulate a replacement that never boots
 #   MOCK_LIVE_FAMILY=129   which cos-<n>-lts family resolves; others 404
 #   MOCK_CURRENT_MILESTONE the value /etc/os-release reports on the old host
+#   MOCK_OPEN_SECRETS      a path the permission check reports as readable by
+#                          other users
 
 : "${GCLOUD_LOG:=/dev/null}"
 : "${MOCK_LIVE_FAMILY:=129}"
@@ -35,6 +37,14 @@ case "$1 $2" in
 		printf '%s' "$CMD" > "$REMOTE_CMD_DIR/cmd-$$-$(od -An -N2 -tu2 </dev/urandom | tr -d ' ').sh"
 	fi
 	case "$CMD" in
+	*"sh -s"*)
+		# The permission check piped from check_secrets_body: report
+		# MOCK_OPEN_SECRETS as readable by other users.
+		if [ -n "${MOCK_OPEN_SECRETS:-}" ]; then
+			printf 'bwgc: other users can read %s\n' "$MOCK_OPEN_SECRETS" >&2
+			exit 1
+		fi
+		;;
 	*"mountpoint -q"*)
 		# Absent for the first MOCK_MOUNT_DELAY polls, then present.
 		_n=$(cat /tmp/bwgc-mountpolls 2>/dev/null || echo 0)

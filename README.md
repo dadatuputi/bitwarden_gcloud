@@ -24,6 +24,11 @@ off and use `renovate.json`, which raises image updates as pull requests.
 [Operations](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Operations#automatic-image-updates)
 covers both.
 
+On the data disk, the stack refuses to start while other local users can enter
+the deployment or read `.env`. Before migrating or upgrading, make it private
+once, as shown in
+[Keeping the deployment private](utilities/README-cos-updates.md#keeping-the-deployment-private).
+
 Everything else below is opt-in.
 
 | Goal | Page |
@@ -83,6 +88,9 @@ Unreleased
   reattach (`utilities/upgrade-cos.sh`)
 * Startup moves to cloud-init: `bwgc.service` starts the stack once the data
   disk is mounted, and `bwgc-supervise.timer` restarts what stops
+* On the data disk the stack refuses to start while other users can enter the
+  deployment or read `.env`, and the migration and upgrade scripts check this
+  before they change anything
 
 * Security headers in `caddy/Caddyfile` now apply to every path. The `header /`
   matcher was an exact match, so `/admin` and `/api/*` were served without
