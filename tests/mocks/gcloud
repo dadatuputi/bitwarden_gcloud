@@ -62,10 +62,25 @@ case "$1 $2" in
 	;;
 "compute images")
 	case "$3" in
+	list)
+		# The live families, as the real listing returns them: unordered.
+		for n in ${MOCK_LIVE_FAMILIES:-$MOCK_LIVE_FAMILY}; do printf 'cos-%s-lts\n' "$n"; done
+		exit 0
+		;;
 	describe-from-family)
-		# $4 is cos-<n>-lts
-		want="cos-${MOCK_LIVE_FAMILY}-lts"
-		[ "$4" = "$want" ] && { printf '%s-19506-299-161\n' "$want"; exit 0; }
+		# $4 is cos-<n>-lts. MOCK_LIVE_FAMILIES lists the milestones whose
+		# family answers globally (default: MOCK_LIVE_FAMILY alone);
+		# MOCK_ZONE_MISSING_FAMILY is one of them that has no image in the
+		# zone yet, so a query with --zone for it 404s as a rollout does.
+		fam=${4#cos-}; fam=${fam%-lts}
+		live=0
+		for n in ${MOCK_LIVE_FAMILIES:-$MOCK_LIVE_FAMILY}; do [ "$fam" = "$n" ] && live=1; done
+		zonal=0
+		for a in "$@"; do [ "$a" = "--zone" ] && zonal=1; done
+		if [ "$live" = 1 ] && { [ "$zonal" = 0 ] || [ "$fam" != "${MOCK_ZONE_MISSING_FAMILY:-}" ]; }; then
+			for a in "$@"; do case "$a" in *diskSizeGb*) printf '10\n'; exit 0 ;; esac; done
+			printf '%s-19506-299-161\n' "$4"; exit 0
+		fi
 		echo "ERROR: family $4 not found" >&2
 		exit 1
 		;;

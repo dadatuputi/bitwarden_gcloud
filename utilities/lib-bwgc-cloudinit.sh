@@ -10,6 +10,27 @@
 #
 # Usage:  emit_cloud_config <disk-name> <mount-point> <reboot-time-hhmm>
 
+# The cos-*-lts families that have an image in a zone, newest milestone first,
+# one per line. Asked of Google rather than kept as a list here, so a new
+# milestone is seen the day it ships. Zonal, because "instances create
+# --image-family" resolves the family in the instance's zone and a new
+# milestone's images reach zones on a rollout schedule: a family that answers
+# globally can still have no image in the zone the instance is going to be
+# built in.
+#
+# Usage:  cos_lts_families <zone>
+cos_lts_families() {
+	gcloud compute images list --project cos-cloud \
+		--filter='family~^cos-[0-9]+-lts$' --format='value(family)' 2>/dev/null \
+	| sort -u -t- -k2,2nr \
+	| while IFS= read -r fam; do
+		if gcloud compute images describe-from-family "$fam" --project cos-cloud \
+			--zone "$1" --format='value(name)' >/dev/null 2>&1; then
+			printf '%s\n' "$fam"
+		fi
+	done
+}
+
 emit_cloud_config() {
 	_disk="$1"
 	_mount="$2"

@@ -58,3 +58,26 @@ assert_status "$UPGRADE_STATUS" 1 "unreachable replacement exits non-zero"
 assert_contains "$OUTPUT" "never became reachable"  "says plainly what failed"
 assert_contains "$OUTPUT" "regression, not a recovery" \
 	"refuses to present the old milestone as a fix"
+
+# --- a family that answers globally but has no image in the zone yet ---------
+# The create in Step 3 resolves the family in the zone, so the probe must too,
+# or the old instance is deleted and the replacement fails to build. Seen on
+# the first real run of tests/e2e: cos-133-lts live, not yet in us-central1-a.
+MOCK_LIVE_FAMILIES="133 129"
+MOCK_ZONE_MISSING_FAMILY=133
+export MOCK_LIVE_FAMILIES MOCK_ZONE_MISSING_FAMILY
+run_upgrade
+assert_status "$UPGRADE_STATUS" 0 "a family still rolling out is skipped for the next one"
+assert_contains "$CALLS" "describe-from-family cos-133-lts --project cos-cloud --zone us-central1-a" "the family probe asks the zone"
+assert_contains "$OUTPUT" "newest live LTS family in us-central1-a: cos-129-lts" "the newest family present in the zone is chosen"
+assert_contains "$CALLS" "instances create vault-old-129" "the replacement is built from the family the zone has"
+
+# Named explicitly, the same family stops the run before anything is touched.
+run_upgrade --image-family cos-133-lts
+assert_status "$UPGRADE_STATUS" 1 "a family with no image in the zone is refused"
+assert_contains "$OUTPUT" "no image available in us-central1-a" "the refusal names the zone"
+assert_contains "$OUTPUT" "Nothing has been changed." "the refusal says nothing was changed"
+assert_not_contains "$CALLS" "instances stop" "nothing is stopped for a family the zone lacks"
+assert_not_contains "$CALLS" "instances delete" "nothing is deleted for a family the zone lacks"
+unset MOCK_LIVE_FAMILIES MOCK_ZONE_MISSING_FAMILY
+
