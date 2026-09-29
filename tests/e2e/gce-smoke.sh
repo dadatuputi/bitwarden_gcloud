@@ -387,9 +387,9 @@ DEPLOY=$MOUNT/bitwarden_gcloud
 containers() { on_q "$1" "docker ps --format '{{.Names}}' | sort | tr '\n' ' '"; }
 seeded_ok() { [ "$(on_q "$1" 'docker exec backup sqlite3 /data/db.sqlite3 "select email from users"')" = "$SEED_EMAIL" ]; }
 external_ip() { gcloud compute instances describe "$1" --zone "$ZONE" --format='value(networkInterfaces[0].accessConfigs[0].natIP)'; }
-# curl writes the -w code even when it fails (000 on a timeout), so only an
-# empty result is turned into 000.
-http_code() { out=$(curl -sk --max-time 20 -o /dev/null -w '%{http_code}' "$@" 2>/dev/null); printf '%s' "${out:-000}"; }
+# curl writes the -w code even when it fails (000 on a timeout), and its
+# exit status must not end the subshell under set -e before it is printed.
+http_code() { out=$(curl -sk --max-time 20 -o /dev/null -w '%{http_code}' "$@" 2>/dev/null) || true; printf '%s' "${out:-000}"; }
 # Through Cloudflare, with certificate verification, as a client would.
 via_cloudflare() { [ "$(curl -s --max-time 20 -o /dev/null -w '%{http_code}' "https://$CF_TEST_HOSTNAME/alive")" = 200 ]; }
 # Over a real certificate, straight at the instance.
