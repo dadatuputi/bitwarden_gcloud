@@ -7,7 +7,7 @@
 * Weekly check for stopped backups and unsupported OS milestones
 * Vault data on its own persistent disk, so OS upgrades are a disk reattach
 
-Free on the Caddy path while egress stays under 1 GB per month and away from China, Hong Kong and Australia. The Cloudflare Tunnel path costs a little every month: see [Connectivity](#connectivity).
+Free on the Caddy path while egress stays under 1 GB per month and away from China and Australia, the two destinations Google's free tier excludes (`countryblock` blocks those and Hong Kong by default). The Cloudflare Tunnel path costs a little every month: see [Connectivity](#connectivity).
 
 ## New install
 
@@ -58,17 +58,21 @@ From Google's [free tier page](https://cloud.google.com/free/docs/free-cloud-fea
   byte, which is what `countryblock` exists to prevent on the Caddy path.
 * The allowance is per billing account, not per project or per instance.
 * Data transfer to networks Google reaches by Direct or Carrier Peering is a
-  separate SKU with no free allowance, about $0.08 per GiB in the Americas.
-  Cloudflare's edge is such a network, so on the tunnel path every byte the vault
-  sends (client syncs, web vault assets, `cloudflared` keepalives) is billed at
-  that rate. On the Caddy path responses go to your clients' ISPs as ordinary
-  internet egress, inside the allowance.
+  separate SKU, "Network Data Transfer Out via Carrier Peering Network", with
+  no free allowance. Cloudflare's edge is such a network, so on the tunnel path
+  every byte the vault sends (client syncs, web vault assets, `cloudflared`
+  keepalives) is billed. On the Caddy path responses go to your clients' ISPs
+  as ordinary internet egress, inside the allowance.
+* The same charge applies on the Caddy path if the DNS record is proxied
+  through Cloudflare (the orange cloud). Keep it DNS-only: see
+  [DDNS](https://github.com/dadatuputi/bitwarden_gcloud/wiki/DDNS#cloudflare).
 * Inbound data transfer is free, and so is data transfer to Google services.
 
 Observed on one deployment with one user, September 2026: 1.37 GiB on the SKU
 "Network Data Transfer Out via Carrier Peering Network - Americas Based", $0.11,
-while every other line on the bill netted to zero. To check your own: Billing,
-Reports, group by SKU, and look for "Carrier Peering".
+which is about $0.08 per GiB, while every other line on the bill netted to
+zero. To check your own: Billing, Reports, group by SKU, and look for "Carrier
+Peering".
 
 [How your vault is reached](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Installation#how-your-vault-is-reached).
 
