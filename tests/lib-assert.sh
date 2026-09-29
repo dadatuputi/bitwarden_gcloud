@@ -33,6 +33,11 @@ assert_before() {
 	else fail "$4" "'$2' (line $_e) should precede '$3' (line $_l)"; fi
 }
 
+assert_eq() {
+	if [ "$1" = "$2" ]; then pass "$3"
+	else fail "$3" "expected '$2', got '$1'"; fi
+}
+
 assert_status() {
 	if [ "$1" -eq "$2" ]; then pass "$3"
 	else fail "$3" "expected exit $2, got $1"; fi

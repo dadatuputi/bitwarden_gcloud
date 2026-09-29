@@ -387,7 +387,9 @@ DEPLOY=$MOUNT/bitwarden_gcloud
 containers() { on_q "$1" "docker ps --format '{{.Names}}' | sort | tr '\n' ' '"; }
 seeded_ok() { [ "$(on_q "$1" 'docker exec backup sqlite3 /data/db.sqlite3 "select email from users"')" = "$SEED_EMAIL" ]; }
 external_ip() { gcloud compute instances describe "$1" --zone "$ZONE" --format='value(networkInterfaces[0].accessConfigs[0].natIP)'; }
-http_code() { curl -sk --max-time 20 -o /dev/null -w '%{http_code}' "$@" 2>/dev/null || echo 000; }
+# curl writes the -w code even when it fails (000 on a timeout), and its
+# exit status must not end the subshell under set -e before it is printed.
+http_code() { out=$(curl -sk --max-time 20 -o /dev/null -w '%{http_code}' "$@" 2>/dev/null) || true; printf '%s' "${out:-000}"; }
 # Through Cloudflare, with certificate verification, as a client would.
 via_cloudflare() { [ "$(curl -s --max-time 20 -o /dev/null -w '%{http_code}' "https://$CF_TEST_HOSTNAME/alive")" = 200 ]; }
 # Over a real certificate, straight at the instance.
@@ -442,8 +444,7 @@ expect "$seeded" yes "tunnel: the vault still holds the seeded account"
 on "$NEW_INSTANCE" 'sudo systemctl start bwgc-supervise.service' >/dev/null 2>&1
 expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared " "tunnel: a supervisor run leaves the container set alone"
 if tier2; then
-	wait_for "the vault through Cloudflare" 18 via_cloudflare || true
-	if via_cloudflare; then cf_ok=yes; else cf_ok=no; fi
+	if wait_for "the vault through Cloudflare" 18 via_cloudflare; then cf_ok=yes; else cf_ok=no; fi
 	expect "$cf_ok" yes "tunnel: the vault answers through Cloudflare at $CF_TEST_HOSTNAME"
 fi
 
@@ -484,8 +485,7 @@ expect "$srv" hidden "caddy: the Server header is removed"
 expect "$(http_code --resolve "$DOMAIN:443:$IP" "https://$DOMAIN/alive")" 200 "caddy: the vault answers from outside at $IP:443"
 expect "$(http_code "http://$IP/")" 308 "caddy: port 80 redirects to https"
 if tier2; then
-	wait_for "a Let's Encrypt certificate" 24 via_letsencrypt "$IP" || true
-	if via_letsencrypt "$IP"; then le_ok=yes; else le_ok=no; fi
+	if wait_for "a Let's Encrypt certificate" 24 via_letsencrypt "$IP"; then le_ok=yes; else le_ok=no; fi
 	expect "$le_ok" yes "caddy: the vault answers at $DOMAIN with a certificate a client trusts"
 	# ddns must have accepted the token and found the record current.
 	ddlog=$(on_q "$NEW_INSTANCE" 'docker logs ddns 2>&1 | tail -20')
@@ -502,8 +502,9 @@ expect "$(http_code --resolve "$DOMAIN:443:$IP" "https://$DOMAIN/alive")" 000 "t
 expect "$(http_code "http://$IP/")" 000 "tunnel again: nothing answers from outside on 80"
 if tier2; then
 	must "the original DNS record is restored" cf_restore_original
-	wait_for "the vault through Cloudflare again" 18 via_cloudflare || true
-	if via_cloudflare; then cf_ok=yes; else cf_ok=no; fi
+	# The A record had a 60 s TTL; a resolver may hand it out for that long
+	# after the CNAME is back, and the ports are closed, so allow for it.
+	if wait_for "the vault through Cloudflare again" 24 via_cloudflare; then cf_ok=yes; else cf_ok=no; fi
 	expect "$cf_ok" yes "tunnel again: the vault answers through Cloudflare at $CF_TEST_HOSTNAME"
 fi
 
