@@ -163,8 +163,14 @@ MILESTONE=$(printf '%s' "$IMAGE_FAMILY" | sed 's/^cos-//; s/-lts$//')
 
 # Whether given or resolved, the family must have an image in this zone before
 # anything is stopped: the create in Step 3 asks the zone, not the world.
+#
+# With --zone the command returns an image family view, which wraps the image
+# under "image", so the field is image.name; without --zone it is name. Both
+# are asked for, and the empty one dropped, so this reads the same whichever
+# shape gcloud answers with. The second end-to-end run refused a family the
+# zone had, on value(name) alone coming back empty.
 IMAGE_NAME=$(gcloud compute images describe-from-family "$IMAGE_FAMILY" \
-	--project cos-cloud --zone "$ZONE" --format="value(name)" 2>/dev/null || true)
+	--project cos-cloud --zone "$ZONE" --format="value(name,image.name)" 2>/dev/null | tr -d '\t' || true)
 if [ -z "$IMAGE_NAME" ]; then
 	cat >&2 <<EOF
 
@@ -191,7 +197,7 @@ echo "image in $ZONE: $IMAGE_NAME"
 # happened; if it does, stop rather than silently start billing.
 DATA_DISK_GB=15
 IMAGE_MIN=$(gcloud compute images describe-from-family "$IMAGE_FAMILY" \
-	--project cos-cloud --zone "$ZONE" --format="value(diskSizeGb)" 2>/dev/null || true)
+	--project cos-cloud --zone "$ZONE" --format="value(diskSizeGb,image.diskSizeGb)" 2>/dev/null | tr -d '\t' || true)
 
 if [ -n "$IMAGE_MIN" ]; then
 	if [ "$IMAGE_MIN" -gt "$DATA_DISK_GB" ]; then
