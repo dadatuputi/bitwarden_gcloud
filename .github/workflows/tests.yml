@@ -1,0 +1,30 @@
+name: Tests
+
+# tests/run-tests.sh needs nothing beyond a POSIX shell, and uses shellcheck
+# and a YAML parser when it finds them. Both are installed here so that the
+# checks they gate are never skipped in CI.
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install shellcheck and a YAML parser
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q shellcheck
+          python3 -m pip install --user -q ruamel.yaml
+          shellcheck --version | sed -n 2p
+
+      - name: Run the test suite
+        run: ./tests/run-tests.sh

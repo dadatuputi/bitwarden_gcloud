@@ -28,7 +28,7 @@ RESERVE_IP=1
 KEEP_OLD=0
 DELETE_FIRST=1
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/lib-bwgc-cloudinit.sh"
 
 usage() {
@@ -106,6 +106,9 @@ command -v gcloud >/dev/null 2>&1 || { echo "gcloud not found. Run this from Clo
 # non-interactive ssh command never sources. The definition is written to the
 # instance once and sourced by each remote command that needs it. Carrying it
 # inline instead means nesting quotes inside quotes at every call site.
+# The tilde is meant to stay literal: this string is sent to the instance
+# inside --command, where the remote login shell expands it.
+# shellcheck disable=SC2088
 COMPOSE_HELPER='~/.bwgc-compose.sh'
 COMPOSE_SRC=". $COMPOSE_HELPER;"
 

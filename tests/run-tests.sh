@@ -8,11 +8,11 @@
 # No dependencies beyond a POSIX shell. gcloud is replaced by tests/mocks/gcloud,
 # which records every call, so the scripts run end to end without touching
 # Google Cloud and the ORDER of operations can be asserted -- which is the point.
-# shellcheck and a YAML parser are used when present and skipped when not.
+# Shellcheck and a YAML parser are used when present and skipped when not.
 
 set -u
 
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 export ROOT
 FILTER="${1:-}"
 
