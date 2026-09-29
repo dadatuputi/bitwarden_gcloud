@@ -1,2 +1,4 @@
 .env
 *.swp
+# tests/e2e/gce-smoke.sh keeps the DNS record it rewrites here until it is restored
+.e2e-dns-original.json

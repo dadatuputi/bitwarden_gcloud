@@ -580,7 +580,7 @@ on_vm "$NEW_INSTANCE" "set -e; \
   on_vm "$NEW_INSTANCE" "docker ps --format '{{.Names}}\t{{.Status}}'"
 
 say "Step 6/7: verify"
-DOMAIN=$(on_vm "$NEW_INSTANCE" "grep -E '^DOMAIN=' $MOUNT/bitwarden_gcloud/.env | cut -d= -f2 | tr -d '\"'" 2>/dev/null | tr -d '\r' || true)
+DOMAIN=$(on_vm "$NEW_INSTANCE" "grep -E '^DOMAIN=' $MOUNT/bitwarden_gcloud/.env | tail -1 | cut -d= -f2 | tr -d '\"'" 2>/dev/null | tr -d '\r' || true)
 on_vm "$NEW_INSTANCE" "set +e; \
   echo '--- jails ---'; docker exec fail2ban fail2ban-client status 2>&1 | tail -2; \
   echo '--- update timer ---'; systemctl list-timers cos-update-reboot.timer --no-pager | head -3; \
