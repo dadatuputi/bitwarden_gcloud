@@ -1,8 +1,8 @@
 name: Tests
 
-# tests/run-tests.sh needs nothing beyond a POSIX shell, and uses shellcheck
-# and a YAML parser when it finds them. Both are installed here so that the
-# checks they gate are never skipped in CI.
+# tests/run-tests.sh needs nothing beyond a POSIX shell, and uses shellcheck,
+# cloud-init, docker and a YAML parser when it finds them. They are all
+# present here, so that the checks they gate are never skipped in CI.
 on:
   push:
     branches: [ "master" ]
@@ -19,12 +19,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install shellcheck and a YAML parser
+      # cloud-init validates the generated cloud-config against its schema.
+      # Docker (present on the runner) renders the compose files and runs the
+      # published caddy image against caddy/Caddyfile.
+      - name: Install shellcheck, cloud-init and a YAML parser
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q shellcheck
+          sudo apt-get install -y -q shellcheck cloud-init
           python3 -m pip install --user -q ruamel.yaml
           shellcheck --version | sed -n 2p
+          cloud-init --version
+          docker compose version
 
       - name: Run the test suite
         run: ./tests/run-tests.sh
