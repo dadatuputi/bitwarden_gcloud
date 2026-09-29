@@ -147,23 +147,15 @@ confirm() {
 
 say "Resolving the target milestone"
 if [ -z "$IMAGE_FAMILY" ]; then
-	# Probe family pointers rather than listing images. Individual images get
-	# marked DEPRECATED as newer builds supersede them within a live family, so
-	# an image listing reports healthy milestones as deprecated. The family
-	# endpoint is the truth: it 404s once a milestone reaches end of support.
-	#
-	# Probed in this zone, not globally. A new milestone's images roll out zone
-	# by zone, and "instances create --image-family" resolves the family in
-	# the instance's zone, so a family that answers globally can still have no
-	# image here. The first run of the end-to-end test hit exactly that: the
-	# old instance was deleted, then the replacement failed to create.
-	for m in 165 161 157 153 149 145 141 137 133 129 125 121 117; do
-		if gcloud compute images describe-from-family "cos-${m}-lts" \
-			--project cos-cloud --zone "$ZONE" --format="value(name)" >/dev/null 2>&1; then
-			IMAGE_FAMILY="cos-${m}-lts"
-			break
-		fi
-	done
+	# The families are listed from Google and each is probed in this zone;
+	# see cos_lts_families. Individual images get marked DEPRECATED as newer
+	# builds supersede them within a live family, so an image listing alone
+	# would report healthy milestones as deprecated; the family endpoint is
+	# the truth, and it 404s once a milestone reaches end of support. The
+	# first run of the end-to-end test showed why the probe must be zonal:
+	# cos-133-lts answered globally, had no image in us-central1-a yet, and
+	# the old instance was deleted before the replacement failed to create.
+	IMAGE_FAMILY=$(cos_lts_families "$ZONE" | head -1)
 	[ -n "$IMAGE_FAMILY" ] || { echo "could not resolve a live cos-*-lts family in $ZONE" >&2; exit 1; }
 	echo "newest live LTS family in $ZONE: $IMAGE_FAMILY"
 fi

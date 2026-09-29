@@ -62,6 +62,11 @@ case "$1 $2" in
 	;;
 "compute images")
 	case "$3" in
+	list)
+		# The live families, as the real listing returns them: unordered.
+		for n in ${MOCK_LIVE_FAMILIES:-$MOCK_LIVE_FAMILY}; do printf 'cos-%s-lts\n' "$n"; done
+		exit 0
+		;;
 	describe-from-family)
 		# $4 is cos-<n>-lts. MOCK_LIVE_FAMILIES lists the milestones whose
 		# family answers globally (default: MOCK_LIVE_FAMILY alone);

@@ -226,14 +226,11 @@ verify_on_disk() { # verify_on_disk <instance> <phase>
 
 # ---------------------------------------------------------------------------
 say "Resolving COS families"
-live=""
-for m in 165 161 157 153 149 145 141 137 133 129 125 121 117; do
-	# In this zone: a family's images roll out zone by zone, and instances are
-	# created from the zone's view of the family.
-	if gcloud compute images describe-from-family "cos-$m-lts" --project cos-cloud --zone "$ZONE" --format='value(name)' >/dev/null 2>&1; then
-		live="$live cos-$m-lts"
-	fi
-done
+# The same discovery upgrade-cos.sh uses: listed from Google, probed in this
+# zone, newest first.
+. "$ROOT/utilities/lib-bwgc-cloudinit.sh"
+live=$(cos_lts_families "$ZONE" | tr '\n' ' ')
+# shellcheck disable=SC2086
 set -- $live
 [ $# -ge 2 ] || { echo "need two live cos-*-lts families, found: $live" >&2; exit 1; }
 [ -n "$TARGET_FAMILY" ] || TARGET_FAMILY=$1
