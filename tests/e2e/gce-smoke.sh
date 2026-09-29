@@ -12,8 +12,17 @@
 # Builds a deployment the way instances looked before the data disk existed
 # (repository in the home directory, no user-data, containers restarted by the
 # daemon), seeds it, then runs the two scripts from this checkout against it.
-# Every resource carries the label bwgc-e2e=<id> and is deleted at the end,
-# whatever happened, unless --keep is given.
+# After the upgrade it switches the replacement to the Cloudflare tunnel path,
+# back to Caddy, and to the tunnel again, with the commands the wiki gives for
+# each direction. Every resource carries the label bwgc-e2e=<id> and is
+# deleted at the end, whatever happened, unless --keep is given.
+#
+# With CF_TUNNEL_TOKEN, CF_DNS_TOKEN, CF_ZONE_ID and CF_TEST_HOSTNAME in the
+# environment, the switches are also checked from outside: the vault is
+# fetched through Cloudflare on the tunnel path, and over a real Let's Encrypt
+# certificate on the Caddy path. Without them, the tunnel gets a token that
+# connects to nothing, Caddy issues itself an internal certificate, and the
+# checks stop at the instance's own address.
 #
 # Needs gcloud authenticated against a project that holds nothing else. Costs
 # about a cent per run; a run that is killed leaves an e2-micro behind, which
@@ -88,8 +97,39 @@ say() { printf '\n=== %s\n' "$1"; }
 # died before naming everything still gets tidied.
 label_filter() { printf 'labels.bwgc-e2e=%s' "$1"; }
 
+# --- Cloudflare DNS, for the checks from outside -----------------------------
+# The test hostname is a CNAME to the test tunnel between runs. The Caddy
+# phase replaces it with an A record to the instance and the original is put
+# back afterwards; it is saved to a file first so --cleanup-only can put it
+# back from a fresh process if a run died in between.
+CF_API=https://api.cloudflare.com/client/v4
+DNS_SAVE="$ROOT/.e2e-dns-original.json"
+tier2() { [ -n "${CF_TUNNEL_TOKEN:-}" ] && [ -n "${CF_DNS_TOKEN:-}" ] && [ -n "${CF_ZONE_ID:-}" ] && [ -n "${CF_TEST_HOSTNAME:-}" ]; }
+cf() { curl -sS --max-time 30 -H "Authorization: Bearer $CF_DNS_TOKEN" -H 'Content-Type: application/json' "$@"; }
+cf_records() { cf "$CF_API/zones/$CF_ZONE_ID/dns_records?name=$CF_TEST_HOSTNAME" | jq -c '.result[]'; }
+cf_delete_records() { cf_records | jq -r '.id' | while IFS= read -r rid; do cf -X DELETE "$CF_API/zones/$CF_ZONE_ID/dns_records/$rid" >/dev/null; done; }
+cf_set_a() { # cf_set_a <ip>
+	cf_delete_records
+	cf -X POST "$CF_API/zones/$CF_ZONE_ID/dns_records" \
+		--data "$(jq -nc --arg n "$CF_TEST_HOSTNAME" --arg ip "$1" '{type:"A",name:$n,content:$ip,ttl:60,proxied:false}')" \
+		| jq -e '.success' >/dev/null
+}
+cf_save_original() { cf_records | head -1 > "$DNS_SAVE"; [ -s "$DNS_SAVE" ] || { rm -f "$DNS_SAVE"; return 1; }; }
+cf_restore_original() {
+	[ -s "$DNS_SAVE" ] || return 0
+	cur=$(cf_records | head -1 | jq -r '"\(.type) \(.content)"')
+	want=$(jq -r '"\(.type) \(.content)"' "$DNS_SAVE")
+	if [ "$cur" = "$want" ]; then rm -f "$DNS_SAVE"; return 0; fi
+	echo "restoring $CF_TEST_HOSTNAME to $want"
+	cf_delete_records
+	cf -X POST "$CF_API/zones/$CF_ZONE_ID/dns_records" \
+		--data "$(jq -c '{type:.type,name:.name,content:.content,ttl:.ttl,proxied:.proxied}' "$DNS_SAVE")" \
+		| jq -e '.success' >/dev/null && rm -f "$DNS_SAVE"
+}
+
 cleanup_id() {
 	say "Cleaning up bwgc-e2e=$1"
+	if tier2; then cf_restore_original || echo "could not restore $CF_TEST_HOSTNAME; check the zone" >&2; fi
 	for inst in $(gcloud compute instances list --filter="$(label_filter "$1")" --format='value(name)' 2>/dev/null); do
 		echo "deleting instance $inst"
 		gcloud compute instances delete "$inst" --zone "$ZONE" --quiet >/dev/null 2>&1 || echo "  (already gone)"
@@ -262,10 +302,16 @@ on "$INSTANCE" "set -e; \
 # The overlay from this checkout, whatever the instance cloned.
 gcloud compute scp "$ROOT/tests/e2e/docker-compose.e2e.yml" "$INSTANCE:~/bitwarden_gcloud/tests/e2e/" --zone "$ZONE" >/dev/null
 SEED_EMAIL="e2e-$ID@example.test"
+# The hostname the vault is served on. With Cloudflare it is the real test
+# hostname; otherwise a name that resolves nowhere and is reached by address.
+if tier2; then DOMAIN=$CF_TEST_HOSTNAME; EMAIL="e2e@${CF_TEST_HOSTNAME#*.}"; else DOMAIN="vault-$ID.e2e.invalid"; EMAIL=internal; fi
 start_legacy() {
+	# DOMAIN and EMAIL are set on the template's own lines, not appended: a
+	# second DOMAIN= line would be read by whichever grep looks first.
 	on "$INSTANCE" "set -e; cd ~/bitwarden_gcloud; \
   cp .env.template .env; \
-  printf '\n# e2e\nDOMAIN=vault-$ID.e2e.invalid\nEMAIL=e2e@example.test\nBACKUP=local\nSIGNUPS_ALLOWED=true\nCOMPOSE_FILE=docker-compose.yml:tests/e2e/docker-compose.e2e.yml\n' >> .env; \
+  sed -i 's/^DOMAIN=.*/DOMAIN=$DOMAIN/; s/^EMAIL=.*/EMAIL=$EMAIL/' .env; \
+  printf '\n# e2e\nBACKUP=local\nSIGNUPS_ALLOWED=true\nCOMPOSE_FILE=docker-compose.yml:tests/e2e/docker-compose.e2e.yml\n' >> .env; \
   sh utilities/install-alias.sh >/dev/null; \
   . ~/.bwgc-compose.sh; docker-compose up -d 2>&1 | tail -3"
 }
@@ -328,3 +374,136 @@ out=$(on_q "$NEW_INSTANCE" 'grep ^VERSION= /etc/os-release | cut -d= -f2')
 expect "$out" "$want" "the replacement runs milestone $want"
 wait_for "the vault" 30 vault_alive "$NEW_INSTANCE" || exit 1
 verify_on_disk "$NEW_INSTANCE" "after upgrade"
+
+# ---------------------------------------------------------------------------
+# The two ways the vault is reached, switched on the replacement with the
+# commands the wiki gives (Switching to a Cloudflare Tunnel, and its "Going
+# back to Caddy"). What is checked is the mechanics those pages warn about:
+# stop the supervisor, down under the current file set, only then edit .env;
+# no orphaned containers; the supervisor not undoing the switch; the tags
+# opening and closing the ports. With Cloudflare, each end is also fetched
+# from outside.
+DEPLOY=$MOUNT/bitwarden_gcloud
+containers() { on_q "$1" "docker ps --format '{{.Names}}' | sort | tr '\n' ' '"; }
+seeded_ok() { [ "$(on_q "$1" 'docker exec backup sqlite3 /data/db.sqlite3 "select email from users"')" = "$SEED_EMAIL" ]; }
+external_ip() { gcloud compute instances describe "$1" --zone "$ZONE" --format='value(networkInterfaces[0].accessConfigs[0].natIP)'; }
+http_code() { curl -sk --max-time 20 -o /dev/null -w '%{http_code}' "$@" 2>/dev/null || echo 000; }
+# Through Cloudflare, with certificate verification, as a client would.
+via_cloudflare() { [ "$(curl -s --max-time 20 -o /dev/null -w '%{http_code}' "https://$CF_TEST_HOSTNAME/alive")" = 200 ]; }
+# Over a real certificate, straight at the instance.
+via_letsencrypt() { [ "$(curl -s --max-time 20 -o /dev/null -w '%{http_code}' --resolve "$DOMAIN:443:$1" "https://$DOMAIN/alive")" = 200 ]; }
+
+switch_to_tunnel() { # switch_to_tunnel <instance> <token>
+	# The token goes over stdin, not in the command line.
+	printf '%s' "$2" | on "$1" "cat > ~/.e2e-tunnel-token"
+	on "$1" "set -e; cd $DEPLOY; . ~/.bwgc-compose.sh; \
+  sudo systemctl stop bwgc-supervise.timer; \
+  docker-compose down >/dev/null 2>&1; \
+  sed -i '/^COMPOSE_FILE=/d; /^TUNNEL_TOKEN=/d' .env; \
+  printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel.yml\nTUNNEL_TOKEN=%s\n' \"\$(cat ~/.e2e-tunnel-token)\" >> .env; \
+  rm -f ~/.e2e-tunnel-token; \
+  docker-compose up -d >/dev/null 2>&1; \
+  sudo systemctl start bwgc-supervise.timer"
+}
+
+switch_to_caddy() { # switch_to_caddy <instance>
+	# "Going back to Caddy", as the wiki has it: supervisor off, down under
+	# the tunnel file set, then the two lines out of .env, then up.
+	on "$1" "set -e; cd $DEPLOY; . ~/.bwgc-compose.sh; \
+  sudo systemctl stop bwgc-supervise.timer bwgc.service; \
+  docker-compose down >/dev/null 2>&1; \
+  [ -z \"\$(docker ps -q)\" ] || { echo 'containers survived down:'; docker ps --format '{{.Names}}'; exit 1; }; \
+  sed -i '/^COMPOSE_FILE=/d; /^TUNNEL_TOKEN=/d' .env; \
+  [ \"\$(grep -cE '^(COMPOSE_FILE|TUNNEL_TOKEN)=' .env)\" = 0 ]; \
+  grep -q '^EMAIL=.' .env; \
+  docker-compose up -d >/dev/null 2>&1; \
+  sudo systemctl start bwgc-supervise.timer"
+}
+
+# The tags, and the rules they select if the project has none (a fresh
+# project has no default-allow-http/https). Creating rules needs more than
+# instanceAdmin, so a project set up per the README has them already and this
+# only ever adds the tags.
+open_ports() { # open_ports <instance>
+	gcloud compute instances add-tags "$1" --zone "$ZONE" --tags http-server,https-server >/dev/null
+	if [ -z "$(gcloud compute firewall-rules list --filter='targetTags:(http-server OR https-server)' --format='value(name)' 2>/dev/null)" ]; then
+		gcloud compute firewall-rules create bitwarden-http-ingress --action allow --target-tags http-server --rules tcp:80 --source-ranges 0.0.0.0/0 >/dev/null
+		gcloud compute firewall-rules create bitwarden-https-ingress --action allow --target-tags https-server --rules tcp:443 --source-ranges 0.0.0.0/0 >/dev/null
+	fi
+}
+close_ports() { gcloud compute instances remove-tags "$1" --zone "$ZONE" --tags http-server,https-server >/dev/null; }
+
+say "Step 6: switch to the Cloudflare tunnel"
+if tier2; then TUNNEL_TOKEN=$CF_TUNNEL_TOKEN; else TUNNEL_TOKEN="e2e-no-such-tunnel-$ID"; fi
+must "the stack is switched to the tunnel file set" switch_to_tunnel "$NEW_INSTANCE" "$TUNNEL_TOKEN"
+expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared " "tunnel: bitwarden, backup and cloudflared run, nothing else"
+if seeded_ok "$NEW_INSTANCE"; then seeded=yes; else seeded=no; fi
+expect "$seeded" yes "tunnel: the vault still holds the seeded account"
+on "$NEW_INSTANCE" 'sudo systemctl start bwgc-supervise.service' >/dev/null 2>&1
+expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared " "tunnel: a supervisor run leaves the container set alone"
+if tier2; then
+	wait_for "the vault through Cloudflare" 18 via_cloudflare || true
+	if via_cloudflare; then cf_ok=yes; else cf_ok=no; fi
+	expect "$cf_ok" yes "tunnel: the vault answers through Cloudflare at $CF_TEST_HOSTNAME"
+fi
+
+say "Step 7: switch back to Caddy"
+if tier2; then
+	must "the original DNS record is saved" cf_save_original
+	IP=$(external_ip "$NEW_INSTANCE")
+	must "an A record points $CF_TEST_HOSTNAME at the instance" cf_set_a "$IP"
+	# What the operator does with ddns on this path, with the same token.
+	on "$NEW_INSTANCE" "cat > $DEPLOY/ddns/ddclient.conf" <<EOF
+use=cmd  cmd='curl -s -H "Metadata-Flavor:Google" http://metadata/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip'
+protocol=cloudflare
+zone=${CF_TEST_HOSTNAME#*.}
+ttl=1
+login=token
+password=$CF_DNS_TOKEN
+$CF_TEST_HOSTNAME
+EOF
+fi
+must "the stack is switched back to the Caddy file set" switch_to_caddy "$NEW_INSTANCE"
+must "ports 80 and 443 are opened with the http-server/https-server tags" open_ports "$NEW_INSTANCE"
+IP=$(external_ip "$NEW_INSTANCE")
+expect "$(containers "$NEW_INSTANCE")" "backup bitwarden countryblock ddns fail2ban proxy " "caddy: the six containers run and cloudflared is gone"
+if seeded_ok "$NEW_INSTANCE"; then seeded=yes; else seeded=no; fi
+expect "$seeded" yes "caddy: the vault still holds the seeded account"
+# Caddy answers on the instance itself first (internal certificate, or the
+# real one once issued), then from here, which is what the tags and the
+# firewall rules are for.
+on_caddy() { [ "$(on_q "$NEW_INSTANCE" "curl -sk --max-time 10 -o /dev/null -w '%{http_code}' --resolve $DOMAIN:443:127.0.0.1 https://$DOMAIN/alive")" = 200 ]; }
+wait_for "caddy on the instance" 18 on_caddy || true
+hdrs=$(on_q "$NEW_INSTANCE" "curl -skI --max-time 10 --resolve $DOMAIN:443:127.0.0.1 https://$DOMAIN/alive")
+case "$hdrs" in *"HTTP/"*" 200"*) code=200 ;; *) code=$(printf '%s' "$hdrs" | head -1) ;; esac
+expect "$code" 200 "caddy: the vault answers over TLS on the instance"
+case "$hdrs" in *"X-Frame-Options: DENY"*|*"x-frame-options: DENY"*) xfo=yes ;; *) xfo=no ;; esac
+expect "$xfo" yes "caddy: the security headers are applied"
+case "$hdrs" in *"Server:"*|*"server:"*) srv=shown ;; *) srv=hidden ;; esac
+expect "$srv" hidden "caddy: the Server header is removed"
+expect "$(http_code --resolve "$DOMAIN:443:$IP" "https://$DOMAIN/alive")" 200 "caddy: the vault answers from outside at $IP:443"
+expect "$(http_code "http://$IP/")" 308 "caddy: port 80 redirects to https"
+if tier2; then
+	wait_for "a Let's Encrypt certificate" 24 via_letsencrypt "$IP" || true
+	if via_letsencrypt "$IP"; then le_ok=yes; else le_ok=no; fi
+	expect "$le_ok" yes "caddy: the vault answers at $DOMAIN with a certificate a client trusts"
+	# ddns must have accepted the token and found the record current.
+	ddlog=$(on_q "$NEW_INSTANCE" 'docker logs ddns 2>&1 | tail -20')
+	case "$ddlog" in *SUCCESS*|*skipped*|*"IP address"*) dd=ok ;; *) dd=none ;; esac
+	expect "$dd" ok "caddy: ddclient reached Cloudflare with the token"
+fi
+
+say "Step 8: back to the tunnel, ports closed"
+must "the stack is switched to the tunnel file set again" switch_to_tunnel "$NEW_INSTANCE" "$TUNNEL_TOKEN"
+close_ports "$NEW_INSTANCE"
+expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared " "tunnel again: bitwarden, backup and cloudflared run, nothing else"
+sleep "$((SLEEP * 2))"
+expect "$(http_code --resolve "$DOMAIN:443:$IP" "https://$DOMAIN/alive")" 000 "tunnel again: nothing answers from outside on 443"
+expect "$(http_code "http://$IP/")" 000 "tunnel again: nothing answers from outside on 80"
+if tier2; then
+	must "the original DNS record is restored" cf_restore_original
+	wait_for "the vault through Cloudflare again" 18 via_cloudflare || true
+	if via_cloudflare; then cf_ok=yes; else cf_ok=no; fi
+	expect "$cf_ok" yes "tunnel again: the vault answers through Cloudflare at $CF_TEST_HOSTNAME"
+fi
+

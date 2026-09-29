@@ -9,7 +9,10 @@ name: End-to-end on GCE
 #
 # Setup is described in tests/e2e/README.md. The three repository variables
 # it needs are GCP_PROJECT, GCP_WIF_PROVIDER and GCP_SA_EMAIL; without them
-# the job is skipped rather than failed, so forks are unaffected.
+# the job is skipped rather than failed, so forks are unaffected. With the
+# Cloudflare secrets and variables as well, the tunnel and Caddy phases are
+# also checked from outside; without them they run against the instance's
+# own address only.
 on:
   workflow_dispatch:
     inputs:
@@ -40,6 +43,13 @@ concurrency:
 
 env:
   CLOUDSDK_CORE_DISABLE_PROMPTS: 1
+  # Optional: a tunnel's run token, a DNS-edit token scoped to one zone, that
+  # zone's id and the hostname the test may rewrite. Empty when unset, and
+  # the script then skips the checks through Cloudflare.
+  CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
+  CF_DNS_TOKEN: ${{ secrets.CF_DNS_TOKEN }}
+  CF_ZONE_ID: ${{ vars.CF_ZONE_ID }}
+  CF_TEST_HOSTNAME: ${{ vars.CF_TEST_HOSTNAME }}
 
 jobs:
   e2e:
@@ -84,7 +94,9 @@ jobs:
             ${{ inputs.keep == true && '--keep' || '' }}
 
       # The script deletes its own resources on exit; this covers a runner
-      # that was killed before it could. Skipped when --keep was asked for.
+      # that was killed before it could, and puts the test hostname's DNS
+      # record back if a run died between the Caddy phase and its restore.
+      # Skipped when --keep was asked for.
       - name: Delete this run's resources
         if: always() && inputs.keep != true
         run: |
