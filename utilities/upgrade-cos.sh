@@ -151,17 +151,45 @@ if [ -z "$IMAGE_FAMILY" ]; then
 	# marked DEPRECATED as newer builds supersede them within a live family, so
 	# an image listing reports healthy milestones as deprecated. The family
 	# endpoint is the truth: it 404s once a milestone reaches end of support.
+	#
+	# Probed in this zone, not globally. A new milestone's images roll out zone
+	# by zone, and "instances create --image-family" resolves the family in
+	# the instance's zone, so a family that answers globally can still have no
+	# image here. The first run of the end-to-end test hit exactly that: the
+	# old instance was deleted, then the replacement failed to create.
 	for m in 165 161 157 153 149 145 141 137 133 129 125 121 117; do
 		if gcloud compute images describe-from-family "cos-${m}-lts" \
-			--project cos-cloud --format="value(name)" >/dev/null 2>&1; then
+			--project cos-cloud --zone "$ZONE" --format="value(name)" >/dev/null 2>&1; then
 			IMAGE_FAMILY="cos-${m}-lts"
 			break
 		fi
 	done
-	[ -n "$IMAGE_FAMILY" ] || { echo "could not resolve a live cos-*-lts family" >&2; exit 1; }
-	echo "newest live LTS family: $IMAGE_FAMILY"
+	[ -n "$IMAGE_FAMILY" ] || { echo "could not resolve a live cos-*-lts family in $ZONE" >&2; exit 1; }
+	echo "newest live LTS family in $ZONE: $IMAGE_FAMILY"
 fi
 MILESTONE=$(printf '%s' "$IMAGE_FAMILY" | sed 's/^cos-//; s/-lts$//')
+
+# Whether given or resolved, the family must have an image in this zone before
+# anything is stopped: the create in Step 3 asks the zone, not the world.
+IMAGE_NAME=$(gcloud compute images describe-from-family "$IMAGE_FAMILY" \
+	--project cos-cloud --zone "$ZONE" --format="value(name)" 2>/dev/null || true)
+if [ -z "$IMAGE_NAME" ]; then
+	cat >&2 <<EOF
+
+STOPPING: $IMAGE_FAMILY has no image available in $ZONE.
+
+The family exists, but its images reach zones on a rollout schedule and this
+zone does not have one yet, so creating the replacement here would fail after
+the old instance was already gone. Wait a few days and try again, or name a
+family that is already in this zone:
+
+    gcloud compute images describe-from-family cos-<n>-lts --project cos-cloud --zone $ZONE
+
+Nothing has been changed.
+EOF
+	exit 1
+fi
+echo "image in $ZONE: $IMAGE_NAME"
 
 # The boot disk is whatever the image declares it needs. Google has said 10 GB
 # for every COS milestone since 2019.
@@ -171,7 +199,7 @@ MILESTONE=$(printf '%s' "$IMAGE_FAMILY" | sed 's/^cos-//; s/-lts$//')
 # happened; if it does, stop rather than silently start billing.
 DATA_DISK_GB=15
 IMAGE_MIN=$(gcloud compute images describe-from-family "$IMAGE_FAMILY" \
-	--project cos-cloud --format="value(diskSizeGb)" 2>/dev/null || true)
+	--project cos-cloud --zone "$ZONE" --format="value(diskSizeGb)" 2>/dev/null || true)
 
 if [ -n "$IMAGE_MIN" ]; then
 	if [ "$IMAGE_MIN" -gt "$DATA_DISK_GB" ]; then

@@ -228,7 +228,9 @@ verify_on_disk() { # verify_on_disk <instance> <phase>
 say "Resolving COS families"
 live=""
 for m in 165 161 157 153 149 145 141 137 133 129 125 121 117; do
-	if gcloud compute images describe-from-family "cos-$m-lts" --project cos-cloud --format='value(name)' >/dev/null 2>&1; then
+	# In this zone: a family's images roll out zone by zone, and instances are
+	# created from the zone's view of the family.
+	if gcloud compute images describe-from-family "cos-$m-lts" --project cos-cloud --zone "$ZONE" --format='value(name)' >/dev/null 2>&1; then
 		live="$live cos-$m-lts"
 	fi
 done
@@ -275,8 +277,9 @@ wait_for "the vault" 30 vault_alive "$INSTANCE" || exit 1
 
 say "Step 2: seed the vault"
 # An account through the API, so the database holds something that would be
-# missing from a fresh, empty vault, and a file among the attachments.
-out=$(on_q "$INSTANCE" "docker exec backup curl -s -o /dev/null -w '%{http_code}' -X POST http://bitwarden:80/api/accounts/register \
+# missing from a fresh, empty vault, and a file among the attachments. The
+# route is the one current vaultwarden serves; /api/accounts/register is gone.
+out=$(on_q "$INSTANCE" "docker exec backup curl -s -o /dev/null -w '%{http_code}' -X POST http://bitwarden:80/identity/accounts/register \
   -H 'Content-Type: application/json' \
   -d '{\"name\":\"e2e\",\"email\":\"$SEED_EMAIL\",\"masterPasswordHash\":\"e2e-fixture-not-a-real-hash-0000000000000000\",\"key\":\"2.e2e-fixture|e2e-fixture|e2e-fixture\",\"kdf\":0,\"kdfIterations\":600000}'")
 expect "$out" 200 "an account is registered through the API (HTTP status)"
