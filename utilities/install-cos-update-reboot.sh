@@ -13,7 +13,7 @@
 
 set -eu
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/lib-bwgc-cloudinit.sh"
 
 DISK_NAME="${BWGC_DISK_NAME:-bwgc-data}"
