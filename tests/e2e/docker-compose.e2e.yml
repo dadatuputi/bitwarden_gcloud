@@ -1,0 +1,19 @@
+# Overlay for the end-to-end test on a real instance. The vault has no real
+# hostname there, so Caddy could only fail ACME challenges against Let's
+# Encrypt, and ddns, countryblock and fail2ban would run against nothing. This
+# keeps bitwarden and backup, which is what the migration and upgrade scripts
+# move and verify, and reaches the vault through the backup container.
+#
+# Selected on the instance with:
+#   COMPOSE_FILE=docker-compose.yml:tests/e2e/docker-compose.e2e.yml
+services:
+  proxy:
+    profiles: ["caddy-only"]
+  ddns:
+    profiles: ["caddy-only"]
+  countryblock:
+    profiles: ["caddy-only"]
+  fail2ban:
+    profiles: ["caddy-only"]
+  bitwarden:
+    depends_on: !reset []

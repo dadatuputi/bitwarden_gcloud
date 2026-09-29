@@ -51,6 +51,11 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
 		assert_not_contains "$svcs" "$s " "the tunnel path does not run $s"
 	done
 	assert_contains "$(cat "$WORK/compose-tunnel.yaml")" "IP_HEADER: CF-Connecting-IP" "the tunnel path tells vaultwarden which header carries the client IP"
+
+	# The end-to-end overlay: bitwarden and backup only, nothing that needs a
+	# hostname, and no cloudflared either.
+	svcs=$(compose -f "$ROOT/docker-compose.yml" -f "$ROOT/tests/e2e/docker-compose.e2e.yml" config --services 2>/dev/null | sort | tr '\n' ' ')
+	assert_eq "$svcs" "backup bitwarden " "the e2e overlay runs only bitwarden and backup"
 else
 	printf '  skip docker compose config (docker compose not installed)\n'
 fi

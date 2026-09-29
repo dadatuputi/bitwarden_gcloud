@@ -1,0 +1,103 @@
+name: End-to-end on GCE
+
+# Runs tests/e2e/gce-smoke.sh: a real Container-Optimized OS instance is
+# migrated onto a data disk, rebooted, and upgraded across milestones, with
+# the scripts from this checkout. Never on pull requests: it needs cloud
+# credentials and creates billable resources. Run it by hand before a
+# release, and monthly so a new COS milestone is noticed before a user hits
+# it.
+#
+# Setup is described in tests/e2e/README.md. The three repository variables
+# it needs are GCP_PROJECT, GCP_WIF_PROVIDER and GCP_SA_EMAIL; without them
+# the job is skipped rather than failed, so forks are unaffected.
+on:
+  workflow_dispatch:
+    inputs:
+      zone:
+        description: Zone for the test instances
+        default: us-central1-a
+      legacy_family:
+        description: COS family for the instance being migrated (blank = second-newest LTS)
+        default: ""
+      target_family:
+        description: COS family to upgrade to (blank = newest LTS)
+        default: ""
+      keep:
+        description: Leave the instances up for inspection (delete them by hand!)
+        type: boolean
+        default: false
+  schedule:
+    - cron: '0 5 1 * *'
+
+permissions:
+  contents: read
+  id-token: write
+
+# One at a time: two runs would fight over free-tier allowance and the sweep.
+concurrency:
+  group: e2e-gce
+  cancel-in-progress: false
+
+env:
+  CLOUDSDK_CORE_DISABLE_PROMPTS: 1
+
+jobs:
+  e2e:
+    if: vars.GCP_PROJECT != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Workload Identity Federation: no key is stored anywhere.
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ vars.GCP_PROJECT }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SA_EMAIL }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      # gcloud compute ssh generates this key on first use and would ask for
+      # a passphrase; a key with none, made here, keeps every call quiet.
+      - name: Prepare an SSH key for gcloud
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/google_compute_engine
+          gcloud --version | head -1
+
+      - name: Choose a run id
+        run: echo "E2E_ID=$(date -u +%m%d%H%M)" >> "$GITHUB_ENV"
+
+      - name: Run the end-to-end test
+        run: |
+          ./tests/e2e/gce-smoke.sh \
+            --project "${{ vars.GCP_PROJECT }}" \
+            --zone "${{ inputs.zone || 'us-central1-a' }}" \
+            --id "$E2E_ID" \
+            --ref "${{ github.sha }}" \
+            ${{ inputs.legacy_family && format('--legacy-family {0}', inputs.legacy_family) || '' }} \
+            ${{ inputs.target_family && format('--target-family {0}', inputs.target_family) || '' }} \
+            ${{ inputs.keep == true && '--keep' || '' }}
+
+      # The script deletes its own resources on exit; this covers a runner
+      # that was killed before it could. Skipped when --keep was asked for.
+      - name: Delete this run's resources
+        if: always() && inputs.keep != true
+        run: |
+          ./tests/e2e/gce-smoke.sh \
+            --project "${{ vars.GCP_PROJECT }}" \
+            --zone "${{ inputs.zone || 'us-central1-a' }}" \
+            --cleanup-only --id "$E2E_ID"
+
+      # Anything a previous run left behind, whatever its id.
+      - name: Sweep resources older than three hours
+        if: always()
+        run: |
+          ./tests/e2e/gce-smoke.sh \
+            --project "${{ vars.GCP_PROJECT }}" \
+            --zone "${{ inputs.zone || 'us-central1-a' }}" \
+            --sweep
