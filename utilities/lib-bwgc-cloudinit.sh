@@ -31,6 +31,46 @@ cos_lts_families() {
 	done
 }
 
+# Makes the deployment private. The cloud-config installs it as make-private.sh,
+# which the stack runs before every start, and the maintenance scripts pipe it
+# to the instance after they put the deployment on the data disk. Expects DIR,
+# the deployment directory. It only ever removes access, and says what it did.
+#
+# Heredoc body is quoted, so nothing in it is expanded locally.
+make_private_body() {
+	cat <<'BWGCEOF'
+# On the data disk nothing above the deployment is private: the home directory
+# whose 750 used to keep other users out is no longer on the path. The
+# directory holds the vault database and its signing key, and .env the admin
+# token and the SMTP and backup credentials. compose.sh and every container run
+# as root, so nothing needs either open to other users.
+#
+# The directory keeps its group bits: with them, group members can read the
+# database, which is 644. COS gives every login its own group, so that is
+# nobody unless the operator shares the deployment through a group on purpose.
+# .env loses them, and keeps its owner bits, so a 400 stays 400.
+#
+# rclone.conf and ddclient.conf are left alone: rclone and ddclient write them
+# 600 themselves, while .env is the one file the operator creates by hand.
+RC=0
+if [ -n "$(find "$DIR" -maxdepth 0 -perm /o=rwx 2>/dev/null)" ]; then
+  if chmod o= "$DIR"; then
+    echo "bwgc: other users could enter $DIR, closed it to them" >&2
+  else
+    echo "bwgc: other users can enter $DIR and chmod o= failed" >&2; RC=1
+  fi
+fi
+if [ -n "$(find -H "$DIR/.env" -perm /go=rwx 2>/dev/null)" ]; then
+  if chmod go= "$DIR/.env"; then
+    echo "bwgc: other users could read $DIR/.env, made it readable by its owner only" >&2
+  else
+    echo "bwgc: other users can read $DIR/.env and chmod go= failed" >&2; RC=1
+  fi
+fi
+exit $RC
+BWGCEOF
+}
+
 emit_cloud_config() {
 	_disk="$1"
 	_mount="$2"
@@ -96,6 +136,8 @@ write_files:
       echo "bwgc: no deployment at \$MOUNT/bitwarden_gcloud" >&2
       exit 1
     fi
+    # A failure is logged and does not keep the vault down.
+    sh /var/lib/bwgc/make-private.sh || true
     echo "bwgc: recreating the stack against \$MOUNT"
     sh /var/lib/bwgc/compose.sh down --remove-orphans
     sh /var/lib/bwgc/compose.sh up -d
@@ -113,7 +155,16 @@ write_files:
     MOUNT=${_mount}
     mountpoint -q "\$MOUNT" || exit 0
     [ -f "\$MOUNT/bitwarden_gcloud/docker-compose.yml" ] || exit 0
+    sh /var/lib/bwgc/make-private.sh || true
     sh /var/lib/bwgc/compose.sh up -d
+
+- path: /var/lib/bwgc/make-private.sh
+  permissions: "0755"
+  owner: root
+  content: |
+    #!/usr/bin/env sh
+    DIR=${_mount}/bitwarden_gcloud
+$(make_private_body | sed 's/^/    /')
 
 - path: /var/lib/bwgc/cos-update-reboot.sh
   permissions: "0755"

@@ -530,6 +530,13 @@ EOF
 	exit 1
 fi
 
+# rsync -a kept the modes a clone and a copied .env.template have, which the
+# home directory used to shield. On the data disk nothing above the deployment
+# is private, so close it to other users now. bwgc.service does the same at
+# every boot, so a failure here is reported and left to it.
+make_private_body | on_vm "sudo env DIR=$MOUNT/bitwarden_gcloud sh -s" || \
+	echo "Could not make $MOUNT/bitwarden_gcloud private. bwgc.service retries at boot." >&2
+
 # The daemon starts every container with an "always" policy about twenty
 # seconds before cloud-init mounts the disk, which binds them to an empty
 # directory on the boot disk. BWGC_RESTART_POLICY=no keeps the daemon out of it;

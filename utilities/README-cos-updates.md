@@ -25,6 +25,30 @@ declared there.
 `lib-bwgc-cloudinit.sh` generates that cloud-config. The other scripts source
 it, so there is one definition rather than several that drift.
 
+## Keeping the deployment private
+
+The deployment holds the vault database, its signing key and `.env`, with the
+admin token and the SMTP and backup credentials. Under the home directory
+nothing else could reach them. On the data disk, `/mnt/disks/bwgc` is readable
+by every local user, so the deployment's own permissions are all that keeps
+them private. A clone, and a `.env` copied from `.env.template`, are readable by
+everyone.
+
+Nothing in the stack needs them open: `compose.sh` and every container run as
+root. So the stack closes them before every start, at boot and at every
+supervisor run: other users lose access to the deployment directory, and `.env`
+becomes readable by its owner only. `migrate-to-data-disk.sh` does the same
+once the copy is on the data disk, and `upgrade-cos.sh` on the old instance
+before it backs up. The group keeps its access to the directory; COS gives
+every login a group of its own.
+
+`bitwarden/rclone/rclone.conf` and `ddns/ddclient.conf` also hold credentials;
+rclone and ddclient write them `600` themselves. Each change is logged:
+
+```sh
+journalctl -u bwgc.service -u bwgc-supervise.service --no-pager | grep bwgc:
+```
+
 ## Install the update timer
 
 ```sh

@@ -285,6 +285,12 @@ confirm "Proceed?"
 
 install_compose_helper "$INSTANCE"
 
+# The old instance may run a cloud-config from before make-private.sh existed,
+# so make the deployment private here rather than wait for the replacement's
+# first boot. The replacement does it again, so a failure is only reported.
+make_private_body | on_vm "$INSTANCE" "sudo env DIR=$MOUNT/bitwarden_gcloud sh -s" || \
+	echo "Could not make $MOUNT/bitwarden_gcloud private. The replacement retries at boot." >&2
+
 # The same rule as the migration: report what the backup will be, do not dictate
 # it. Only a backup that cannot be taken stops the run.
 BACKUP_ENC=no

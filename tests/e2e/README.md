@@ -23,7 +23,8 @@ by the daemon. That is what the migration is for.
 4. Runs `migrate-to-data-disk.sh --yes` and verifies: the mount, the three
    systemd units, that the running containers bind the data disk and were
    started by `bwgc.service`, that `/alive` answers, that the account and the
-   marker are what the containers see.
+   marker are what the containers see, and that the deployment and `.env` are
+   closed to other users.
 5. Reboots once more and verifies the same. This is the boot every later
    reboot looks like, including the unattended weekly one.
 6. Runs `upgrade-cos.sh --yes --no-reserve-ip` to the newest LTS and verifies

@@ -260,6 +260,13 @@ verify_on_disk() { # verify_on_disk <instance> <phase>
 	out=$(on_q "$inst" "sudo grep -c '^BWGC_RESTART_POLICY=no' $MOUNT/bitwarden_gcloud/.env")
 	expect "$out" 1 "$phase: .env keeps the daemon from starting the stack at boot"
 
+	# The clone and the .env copied from the template were readable by everyone.
+	out=$(on_q "$inst" "sudo stat -c %a $MOUNT/bitwarden_gcloud")
+	case "$out" in *[1-7]) closed=no ;; *) closed=yes ;; esac
+	expect "$closed" yes "$phase: other users cannot enter the deployment ($out)"
+	out=$(on_q "$inst" "sudo stat -L -c %a $MOUNT/bitwarden_gcloud/.env")
+	expect "$out" 600 "$phase: .env is readable by its owner only"
+
 	out=$(on_q "$inst" 'sudo journalctl -u bwgc.service -b --no-pager | grep -cE "refusing|no deployment|not mounted"')
 	expect "${out:-0}" 0 "$phase: bwgc.service logged no refusal this boot"
 }
