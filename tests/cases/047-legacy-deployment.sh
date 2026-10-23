@@ -55,3 +55,15 @@ assert_eq "$out" "" "does nothing on a second run"
 # The migration runs it every time it installs the shim.
 inst=$(sed -n '/^install_compose_helper() {/,/^}/p' "$mig_script")
 assert_contains "$inst" "strip_old_alias_body |" "installing the shim also removes the old alias"
+
+# Found on the real run: the download line claimed encryption for a plaintext
+# archive, a 1.4 MB vault was reported as "1 GB", and the upgrade's vault check
+# printed nothing when the domain did not answer, because a pipeline's status is
+# that of head, not curl.
+dl=$(sed -n '/backup downloaded:/,/^	else$/p' "$mig_script")
+assert_contains "$dl" 'if [ "$BACKUP_ENC" = yes ]' "names encryption only when the backup is encrypted"
+assert_contains "$dl" "Not encrypted"              "says so when it is not"
+assert_contains "$mig" 'VAULT_SIZE="${PAYLOAD_MB} MB"' "reports a small vault in MB"
+upg_src=$(cat "$ROOT/utilities/upgrade-cos.sh")
+assert_not_contains "$upg_src" "| head -1 || echo 'no answer yet" "the vault check does not rely on head's exit status"
+assert_contains "$upg_src" "else echo 'no answer yet" "the vault check reports an empty answer"

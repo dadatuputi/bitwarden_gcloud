@@ -243,7 +243,8 @@ for a deployment this old are on the wiki:
 
     https://github.com/dadatuputi/bitwarden_gcloud/wiki/Migrating-to-a-Data-Disk#a-deployment-older-than-mid-2023
 
-Nothing has been changed.
+Nothing has been changed, apart from installing the compose shim
+(~/.bwgc-compose.sh) and removing any old docker-compose alias it replaces.
 EOF
 	exit 1
 fi
@@ -260,7 +261,8 @@ up, then run this script again:
     grep -q '^BACKUP=' .env || echo 'BACKUP=local' >> .env
     . ~/.bwgc-compose.sh; docker-compose up -d
 
-Nothing has been changed.
+Nothing has been changed, apart from installing the compose shim
+(~/.bwgc-compose.sh) and removing any old docker-compose alias it replaces.
 EOF
 	exit 1
 fi
@@ -373,7 +375,11 @@ if [ -n "$REMOTE_BACKUP" ]; then
 	LOCAL_COPY="$LOCAL_BACKUP_DIR/$(basename "$REMOTE_BACKUP")"
 	if [ -s "$LOCAL_COPY" ]; then
 		echo "backup downloaded: $LOCAL_COPY ($(du -h "$LOCAL_COPY" | cut -f1))"
-		echo "Encrypted with BACKUP_ENCRYPTION_KEY. Keep that key somewhere else."
+		if [ "$BACKUP_ENC" = yes ]; then
+			echo "Encrypted with BACKUP_ENCRYPTION_KEY. Keep that key somewhere else."
+		else
+			echo "Not encrypted: this file is a plain tar.gz of your vault. Keep it private."
+		fi
 	else
 		echo "The download produced nothing usable." >&2
 		confirm "Continue with the backup only on the instance?"
@@ -460,7 +466,9 @@ EOF
 		fi
 	fi
 	DISK_SIZE="${TARGET_GB}GB"
-	echo "Vault is ${PAYLOAD_GB} GB; data disk will be ${DISK_SIZE} (boot ${BOOT_GB} GB, free tier ${FREE_TIER_GB} GB)."
+	# PAYLOAD_GB rounds up for sizing, so a vault of a few MB would read as 1 GB.
+	if [ "$PAYLOAD_MB" -lt 1024 ]; then VAULT_SIZE="${PAYLOAD_MB} MB"; else VAULT_SIZE="${PAYLOAD_GB} GB"; fi
+	echo "Vault is ${VAULT_SIZE}; data disk will be ${DISK_SIZE} (boot ${BOOT_GB} GB, free tier ${FREE_TIER_GB} GB)."
 fi
 
 say "Step 3/7: create and attach the data disk"
