@@ -106,9 +106,29 @@ compose() {
 docker-compose() { compose "$@"; }
 BWGCEOF
 }
+# Deployments installed before the shim existed carry an alias in ~/.bash_alias
+# pointing at the unpinned docker/compose image, whose latest tag is Compose
+# 1.26.2. It cannot parse the current docker-compose.yml, and in an interactive
+# shell it shadows the function above, so an operator following the docs gets
+# the old compose without knowing it. Same removal as install-alias.sh.
+strip_old_alias_body() {
+	cat <<'BWGCEOF'
+f=~/.bash_alias
+if [ -f "$f" ] && grep -q "alias docker-compose=" "$f"; then
+  awk '
+    /^#?[[:space:]]*alias docker-compose=/ { skip=1 }
+    skip { if ($0 !~ /\\$/) { skip=0 }; next }
+    { print }
+  ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  echo "Removed the old docker-compose alias from $f."
+fi
+BWGCEOF
+}
 install_compose_helper() {
 	compose_helper_body | gcloud compute ssh "$INSTANCE" --zone "$ZONE" \
 		--command "cat > $COMPOSE_HELPER" >/dev/null
+	strip_old_alias_body | gcloud compute ssh "$INSTANCE" --zone "$ZONE" \
+		--command 'sh -s'
 	# Hook it into ~/.bashrc as well. Writing the file alone covers
 	# ssh --command, which sources it explicitly, but leaves an interactive
 	# shell reporting "docker-compose: command not found" with the file sitting
@@ -206,6 +226,27 @@ if [ "$RESUME" -eq 0 ]; then
 
 # Everything from Step 1 onwards changes the instance. Step 2 backs the vault up
 # through the backup container, so check it can before anything moves.
+#
+# Two causes look the same from docker ps. A deployment checked out before the
+# backup service existed (mid-2023) has no such service to start, and telling
+# that operator to set BACKUP and run compose sends them into an update they
+# were never told they needed.
+if ! on_vm 'grep -qE "^  backup:" ~/bitwarden_gcloud/docker-compose.yml' >/dev/null 2>&1; then
+	cat >&2 <<EOF
+
+This deployment's docker-compose.yml has no backup service. It was checked out
+before backups moved into their own container, and Step 2 takes its backup
+through that container.
+
+Bring the deployment up to date first, then run this script again. The steps
+for a deployment this old are on the wiki:
+
+    https://github.com/dadatuputi/bitwarden_gcloud/wiki/Migrating-to-a-Data-Disk#a-deployment-older-than-mid-2023
+
+Nothing has been changed.
+EOF
+	exit 1
+fi
 if ! on_vm 'docker ps --format "{{.Names}}" | grep -qx backup' >/dev/null 2>&1; then
 	cat >&2 <<EOF
 
@@ -217,7 +258,7 @@ up, then run this script again:
 
     cd ~/bitwarden_gcloud
     grep -q '^BACKUP=' .env || echo 'BACKUP=local' >> .env
-    docker-compose up -d
+    . ~/.bwgc-compose.sh; docker-compose up -d
 
 Nothing has been changed.
 EOF
@@ -259,25 +300,6 @@ else
 fi
 echo
 
-# Everything from Step 1 onwards changes the instance. Step 2 backs the vault up
-# through the backup container, so check it can before anything moves.
-if ! on_vm 'docker ps --format "{{.Names}}" | grep -qx backup' >/dev/null 2>&1; then
-	cat >&2 <<EOF
-
-The backup container is not running, and Step 2 takes its backup through it.
-
-BACKUP ships commented out in .env.template, so a deployment that never turned
-backups on has the container present but exited. Enable it and bring the stack
-up, then run this script again:
-
-    cd ~/bitwarden_gcloud
-    grep -q '^BACKUP=' .env || echo 'BACKUP=local' >> .env
-    docker-compose up -d
-
-Nothing has been changed.
-EOF
-	exit 1
-fi
 # The plan is printed last, after the checks, so it never advertises work
 # this run is not going to do -- creating a disk on a host that already has
 # one, for instance -- and so a reader can see the prerequisites were
