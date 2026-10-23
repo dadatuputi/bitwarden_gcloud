@@ -586,7 +586,8 @@ on_vm "$NEW_INSTANCE" "set +e; \
   echo '--- update timer ---'; systemctl list-timers cos-update-reboot.timer --no-pager | head -3; \
     echo '--- vault ---'; \
     if [ -z '$DOMAIN' ]; then echo 'no DOMAIN in .env, skipped'; \
-    else curl -sI --max-time 20 https://$DOMAIN/api/version | head -1 || echo 'no answer yet; DNS may not point here'; \
+    else r=\$(curl -sI --max-time 20 https://$DOMAIN/api/version | head -1); \
+      if [ -n \"\$r\" ]; then echo \"\$r\"; else echo 'no answer yet; DNS may not point here'; fi; \
       curl -sI --max-time 20 https://$DOMAIN/admin | grep -i x-frame-options; fi; \
     true"
 
