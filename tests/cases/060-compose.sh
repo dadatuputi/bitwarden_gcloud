@@ -50,6 +50,7 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
 	for s in proxy ddns countryblock fail2ban; do
 		assert_not_contains "$svcs" "$s " "the tunnel path does not run $s"
 	done
+	assert_contains "$(cat "$WORK/compose-tunnel.yaml")" "pull_policy: daily" "the tunnel path re-checks for a newer cloudflared each day"
 	assert_contains "$(cat "$WORK/compose-tunnel.yaml")" "IP_HEADER: CF-Connecting-IP" "the tunnel path tells vaultwarden which header carries the client IP"
 
 	# The end-to-end overlay: bitwarden and backup only, nothing that needs a

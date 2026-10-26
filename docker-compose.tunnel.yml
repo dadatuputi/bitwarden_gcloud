@@ -58,6 +58,9 @@ services:
 
   cloudflared:
     image: cloudflare/cloudflared:latest
+    # Pick up security releases within a day. Not "always": the supervisor's
+    # 5-minute "up -d" would exceed Docker Hub's anonymous pull limit.
+    pull_policy: daily
     restart: ${BWGC_RESTART_POLICY:-always}
     container_name: cloudflared
     mem_limit: 96m
