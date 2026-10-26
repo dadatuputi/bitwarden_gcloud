@@ -57,12 +57,16 @@ services:
       - IP_HEADER=CF-Connecting-IP
 
   cloudflared:
-    # A version, not latest: "up -d" only pulls an image it does not already
-    # have, so latest stays on whatever was first pulled. 2026.10.2 is the
-    # first release that drops the compromised eMudhra intermediates
-    # (https://blog.cloudflare.com/emudhra-certificate-compromise/); stay at or
-    # above it. renovate.json raises later releases as pull requests.
-    image: cloudflare/cloudflared:2026.10.4
+    image: cloudflare/cloudflared:latest
+    # "up -d" never re-pulls an image it already has, so latest alone would stay
+    # on whatever was first pulled. cloudflared is the stack's front door, and
+    # Cloudflare asks every tunnel to move to a fixed release promptly (for
+    # example 2026.10.2, which drops the compromised eMudhra intermediates:
+    # https://blog.cloudflare.com/emudhra-certificate-compromise/). daily has
+    # the next "up -d" check for a newer latest once the last pull is a day
+    # old. Not always: the supervisor runs "up -d" every five minutes, which
+    # would query Docker Hub twelve times an hour, over its anonymous limit.
+    pull_policy: daily
     restart: ${BWGC_RESTART_POLICY:-always}
     container_name: cloudflared
     mem_limit: 96m
