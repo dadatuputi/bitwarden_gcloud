@@ -57,7 +57,12 @@ services:
       - IP_HEADER=CF-Connecting-IP
 
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    # A version, not latest: "up -d" only pulls an image it does not already
+    # have, so latest stays on whatever was first pulled. 2026.10.2 is the
+    # first release that drops the compromised eMudhra intermediates
+    # (https://blog.cloudflare.com/emudhra-certificate-compromise/); stay at or
+    # above it. renovate.json raises later releases as pull requests.
+    image: cloudflare/cloudflared:2026.10.4
     restart: ${BWGC_RESTART_POLICY:-always}
     container_name: cloudflared
     mem_limit: 96m
