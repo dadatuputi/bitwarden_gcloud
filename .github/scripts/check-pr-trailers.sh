@@ -29,10 +29,7 @@ else
 	BODY=$(cat)
 fi
 
-# GitHub stores descriptions typed in the web editor with CRLF line endings.
-# --no-divider: a line starting with "---" (a Markdown rule) must not be taken
-# for the start of a patch, which would hide everything after it.
-TRAILERS=$(printf '%s\n' "$BODY" | tr -d '\r' | git interpret-trailers --parse --no-divider)
+TRAILERS=$(printf '%s\n' "$BODY" | sh "$(dirname -- "$0")/parse-trailers.sh")
 
 # Trailer keys are matched without regard to case, as git does.
 values() {
@@ -52,7 +49,7 @@ problem() { printf '%s\n' "$1"; problems=$((problems + 1)); }
 
 if [ -z "$CHANGELOG" ]; then
 	if printf '%s\n' "$BODY" | grep -qi '^[[:space:]]*changelog[[:space:]]*:'; then
-		problem "A Changelog line is there, but not in the last paragraph of the description, so git does not read it as a trailer. Move the trailers to the very end, after everything else, with a blank line above them."
+		problem "A Changelog line is there, but not in the last paragraph of the description, so git does not read it as a trailer. Move the trailers to the very end, with a blank line above them. Only a closing footer after a \"---\" line may follow them."
 	else
 		problem "No Changelog trailer. End the description with \"Changelog: <one line for the release notes>\", or \"Changelog: none\" if users would not notice the change."
 	fi

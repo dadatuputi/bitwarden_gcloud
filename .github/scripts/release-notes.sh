@@ -11,6 +11,7 @@
 
 set -eu
 
+PARSE="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/parse-trailers.sh"
 TO=${2:-HEAD}
 FROM=${1:-$(git describe --tags --abbrev=0 "$TO")}
 
@@ -20,10 +21,10 @@ nl='
 '
 
 for c in $(git rev-list --first-parent --reverse "$FROM..$TO"); do
-	msg=$(git log -1 --format=%B "$c" | tr -d '\r')
+	msg=$(git log -1 --format=%B "$c")
 	subject=$(printf '%s\n' "$msg" | head -1)
 	ref=$(printf '%s\n' "$subject" | sed -n 's/^Merge pull request \(#[0-9][0-9]*\).*/ (\1)/p')
-	trailers=$(printf '%s\n' "$msg" | git interpret-trailers --parse --no-divider)
+	trailers=$(printf '%s\n' "$msg" | sh "$PARSE")
 	while IFS= read -r line; do
 		key=$(printf '%s' "${line%%:*}" | tr '[:upper:]' '[:lower:]')
 		val=$(printf '%s' "${line#*:}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')

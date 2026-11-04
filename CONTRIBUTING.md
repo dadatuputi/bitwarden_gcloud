@@ -27,8 +27,9 @@ Upgrade-Action: Run utilities/migrate-to-data-disk.sh once on an existing deploy
   with an Upgrade-Action cannot also say `Changelog: none`.
 
 The trailers must be the **last paragraph** of the description, with a blank
-line above them and nothing after them, because that is where git looks for
-trailers. The pull request template puts them there for you. Pull requests
+line above them, because that is where git looks for trailers. The one thing
+allowed after them is a closing footer that starts with a `---` line, like
+the one some tools append when they open a pull request. The pull request template puts them there for you. Pull requests
 opened by Renovate or Dependabot are not checked.
 
 ## Versioning
