@@ -34,10 +34,10 @@ jobs:
 
           ## About the container images
 
-          A release fixes this repository's configuration and scripts. The images
-          the stack runs (`:latest`, `:master`) are rebuilt and updated by
-          Watchtower on their own schedule, so security updates keep arriving
-          between releases.
+          A release fixes this repository's configuration and scripts, not the
+          container images. The stack runs floating image tags (`:latest`,
+          `:master`), which change whenever the host pulls them: by Watchtower,
+          if its opt-in profile is enabled, or by `docker-compose pull`.
           NOTE
           cat notes.md
 

@@ -42,9 +42,10 @@ a tag. The number says what updating costs an existing deployment:
 - **Minor**: something new, and updating needs no action.
 - **Patch**: fixes only, and updating needs no action.
 
-A tag fixes the configuration and scripts in this repository. The container
-images the stack runs (`:latest`, `:master`) keep updating through Watchtower
-between releases.
+A tag fixes the configuration and scripts in this repository, not the
+container images. The stack runs floating image tags (`:latest`, `:master`),
+which change whenever the host pulls them: by Watchtower, if its opt-in
+profile is enabled, or by `docker-compose pull`.
 
 ## Cutting a release
 
