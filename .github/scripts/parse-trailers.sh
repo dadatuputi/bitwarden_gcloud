@@ -14,6 +14,12 @@
 #   git's own divider handling cannot be used for this, because it cuts at the
 #   FIRST "---" line, and a Markdown rule earlier in a description would hide
 #   the trailers; --no-divider turns that off.
+# - Wrapped trailers are joined back together. GitHub wraps a description at
+#   72 columns when it writes it into a merge commit, so a long Changelog line
+#   arrives as a "Changelog: ..." line followed by plain text. In the last
+#   paragraph, when it starts with a trailer, a line that does not start a new
+#   "Key: value" is indented, which is how git marks a continuation line, and
+#   git then unfolds it.
 
 set -u
 
@@ -28,5 +34,14 @@ tr -d '\r' | awk '
 				if (tolower(line[i]) ~ /^[[:space:]]*changelog[[:space:]]*:/) keep = 1
 			if (!keep) end = last - 1
 		}
-		for (i = 1; i <= end; i++) print line[i]
-	}' | git interpret-trailers --parse --no-divider
+		while (end > 0 && line[end] ~ /^[[:space:]]*$/) end--
+		start = end
+		while (start > 1 && line[start - 1] !~ /^[[:space:]]*$/) start--
+		key = "^[A-Za-z0-9][A-Za-z0-9-]*[[:space:]]*:"
+		for (i = 1; i <= end; i++) {
+			if (i > start && line[start] ~ key && line[i] !~ key && line[i] !~ /^[[:space:]]/)
+				print " " line[i]
+			else
+				print line[i]
+		}
+	}' | git interpret-trailers --parse --no-divider --unfold
