@@ -1,0 +1,48 @@
+name: Draft a release
+
+# Pushing a v* tag drafts a GitHub Release whose notes come from the Changelog
+# and Upgrade-Action trailers merged since the previous tag. The draft is not
+# published: read it over, edit it, and publish it by hand. CONTRIBUTING.md,
+# "Cutting a release", has the steps.
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Write the notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          if PREV=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null); then
+            ./.github/scripts/release-notes.sh "$PREV" "$TAG" > notes.md
+          else
+            printf 'First tagged release.\n' > notes.md
+          fi
+          cat >> notes.md <<'NOTE'
+
+          ## About the container images
+
+          A release fixes this repository's configuration and scripts, not the
+          container images. The stack follows floating image tags (`:latest`,
+          `:master`), and Watchtower applies their security rebuilds on its
+          weekly schedule, between releases as well as with them.
+          NOTE
+          cat notes.md
+
+      - name: Create the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes-file notes.md

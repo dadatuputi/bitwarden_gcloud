@@ -1,0 +1,40 @@
+name: Release-note trailers
+
+# Every pull request description must end with a Changelog trailer, which the
+# release notes are drafted from. CONTRIBUTING.md explains what to write.
+#
+# The check reads the description, not the commits, so a contributor fixes a
+# failure by editing the description: no rebase or force-push. "edited" re-runs
+# it when they do. The repository's merge commit message is set to the pull
+# request's title and description, which carries the trailers into the merge
+# commit on master, where .github/scripts/release-notes.sh reads them.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  trailers:
+    name: Release-note trailers
+    # Renovate and Dependabot open pull requests as bots. A skipped job counts
+    # as passing, so a required check does not hold their pull requests up.
+    if: github.event.pull_request.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The description goes in through the environment, never into the
+      # script text, so nothing in it can run as shell.
+      - name: Check the description
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if ! printf '%s' "$PR_BODY" | ./.github/scripts/check-pr-trailers.sh > result.txt; then
+            while IFS= read -r line; do echo "::error title=Release-note trailers::$line"; done < result.txt
+            echo "See CONTRIBUTING.md, \"Release-note trailers\"."
+            exit 1
+          fi
+          cat result.txt

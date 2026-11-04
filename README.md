@@ -17,12 +17,13 @@ Free on the Caddy path while egress stays under 1 GB per month and away from Chi
 
 Your vault, your `.env` and your data are untouched by a pull.
 
-One thing does change on its own: `watchtower` was on by default and is now
-behind a compose profile, so it stops after a pull and image updates end
-silently. Put it back with `COMPOSE_PROFILES=watchtower` in `.env`, or leave it
-off and use `renovate.json`, which raises image updates as pull requests.
-[Operations](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Operations#automatic-image-updates)
-covers both.
+`watchtower`, which applies image updates, moves to the maintained
+`nickfedor/watchtower` image and runs by default. The old
+`containrrr/watchtower` is abandoned and does not work with current Docker
+releases, so an older deployment may have had no image updates for some time.
+One pull and `docker-compose up -d` brings them back. To have watchtower
+report updates without applying them, set `WATCHTOWER_MONITOR_ONLY=true` in
+`.env`.
 
 On the data disk, the stack closes the deployment and `.env` to other local
 users before every start. See
@@ -106,6 +107,10 @@ Containers maintained in other projects. Report issues there.
 ## Changelog
 Unreleased
 
+* 4 November 2026: `watchtower` runs by default again, so image security
+  updates apply without anyone logging in. It was briefly opt-in behind a
+  compose profile; a deployment that set `COMPOSE_PROFILES=watchtower` keeps
+  working, and `WATCHTOWER_MONITOR_ONLY=true` turns updating off
 * 29 September 2026: Caddy is the recommended path again, and the tunnel is a
   documented alternative. Google bills egress to Cloudflare's edge on the
   carrier-peering SKU ("Network Data Transfer Out via Carrier Peering Network"),
@@ -127,8 +132,8 @@ Unreleased
 * Security headers in `caddy/Caddyfile` now apply to every path. The `header /`
   matcher was an exact match, so `/admin` and `/api/*` were served without
   `X-Frame-Options` and `X-Content-Type-Options`
-* `watchtower` is now opt-in behind a compose profile; added `renovate.json` as
-  the reviewed replacement
+* `watchtower` was made opt-in behind a compose profile, with `renovate.json`
+  as the reviewed replacement (reversed above)
 * Removed the Docker socket mount from `backup`; restore now needs the operator
   to stop `bitwarden` first
 * Removed `privileged: true` from `countryblock`; `NET_ADMIN` and `NET_RAW` are

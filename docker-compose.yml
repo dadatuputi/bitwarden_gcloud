@@ -215,18 +215,24 @@ services:
     # and restart it with the same options that were used when it was deployed initially
     # https://github.com/nicholas-fedor/watchtower
     #
+    # On by default: unattended security updates are the point of this stack.
+    # The images here follow floating tags, and their publishers rebuild them
+    # for security fixes, so without watchtower a deployment that nobody logs
+    # into would never get those fixes.
+    #
+    # The cost is trust: watchtower holds the Docker socket, so it deploys
+    # whatever a publisher pushes to a followed tag, with no review. Set
+    # WATCHTOWER_MONITOR_ONLY=true in .env to keep it checking without
+    # updating anything, and update by hand instead.
+    #
     # Pinned rather than floating. This container decides when everything else
     # updates, so it should not silently update itself. Renovate raises a PR when
-    # a new release appears, and renovate.json sets pinDigests, which needs an
-    # explicit tag to work from.
+    # a new release appears.
     image: nickfedor/watchtower:1.21.2
     restart: ${BWGC_RESTART_POLICY:-always}
     container_name: watchtower
     mem_limit: 96m
     pids_limit: 100
-    # Opt-in: this service only starts with `docker-compose --profile watchtower up -d`.
-    # See the security note in README.md before enabling.
-    profiles: ["watchtower"]
     <<: *default-logging
     depends_on:
     - bitwarden
@@ -235,6 +241,7 @@ services:
     environment:
     - WATCHTOWER_CLEANUP=true
     - WATCHTOWER_SCHEDULE
+    - WATCHTOWER_MONITOR_ONLY
     - TZ
 
 
