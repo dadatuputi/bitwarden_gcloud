@@ -23,7 +23,9 @@ nl='
 for c in $(git rev-list --first-parent --reverse "$FROM..$TO"); do
 	msg=$(git log -1 --format=%B "$c")
 	subject=$(printf '%s\n' "$msg" | head -1)
-	ref=$(printf '%s\n' "$subject" | sed -n 's/^Merge pull request \(#[0-9][0-9]*\).*/ (\1)/p')
+	# "Merge pull request #12 from ..." by default, or "Title (#12)" once the
+	# merge commit message is set to the title and description.
+	ref=$(printf '%s\n' "$subject" | sed -n -e 's/^Merge pull request \(#[0-9][0-9]*\).*/ (\1)/p' -e 's/.* (\(#[0-9][0-9]*\))$/ (\1)/p' | head -1)
 	trailers=$(printf '%s\n' "$msg" | sh "$PARSE")
 	while IFS= read -r line; do
 		key=$(printf '%s' "${line%%:*}" | tr '[:upper:]' '[:lower:]')
