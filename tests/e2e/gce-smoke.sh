@@ -327,11 +327,16 @@ wait_for "the vault" 30 vault_alive "$INSTANCE" || exit 1
 
 say "Step 2: seed the vault"
 # An account through the API, so the database holds something that would be
-# missing from a fresh, empty vault, and a file among the attachments. The
-# route is the one current vaultwarden serves; /api/accounts/register is gone.
-out=$(on_q "$INSTANCE" "docker exec backup curl -s -o /dev/null -w '%{http_code}' -X POST http://bitwarden:80/identity/accounts/register \
+# missing from a fresh, empty vault, and a file among the attachments.
+# Vaultwarden 1.37 dropped the one-step /identity/accounts/register (404) for
+# the clients' two-step flow: send-verification-email returns a token in the
+# body when no mail is configured, and register/finish takes it.
+token=$(on_q "$INSTANCE" "docker exec backup curl -s -X POST http://bitwarden:80/identity/accounts/register/send-verification-email \
   -H 'Content-Type: application/json' \
-  -d '{\"name\":\"e2e\",\"email\":\"$SEED_EMAIL\",\"masterPasswordHash\":\"e2e-fixture-not-a-real-hash-0000000000000000\",\"key\":\"2.e2e-fixture|e2e-fixture|e2e-fixture\",\"kdf\":0,\"kdfIterations\":600000}'")
+  -d '{\"email\":\"$SEED_EMAIL\",\"name\":\"e2e\"}'")
+out=$(on_q "$INSTANCE" "docker exec backup curl -s -o /dev/null -w '%{http_code}' -X POST http://bitwarden:80/identity/accounts/register/finish \
+  -H 'Content-Type: application/json' \
+  -d '{\"email\":\"$SEED_EMAIL\",\"emailVerificationToken\":\"$token\",\"masterPasswordHash\":\"e2e-fixture-not-a-real-hash-0000000000000000\",\"userSymmetricKey\":\"2.e2e-fixture|e2e-fixture|e2e-fixture\",\"kdf\":0,\"kdfIterations\":600000}'")
 expect "$out" 200 "an account is registered through the API (HTTP status)"
 out=$(on_q "$INSTANCE" 'docker exec backup sqlite3 /data/db.sqlite3 "select email from users"')
 expect "$out" "$SEED_EMAIL" "the account is in the database"
