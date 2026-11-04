@@ -12,9 +12,14 @@
     "enabled": true
   },
   "docker": {
-    "pinDigests": true
+    "pinDigests": false
   },
   "packageRules": [
+    {
+      "description": "Images follow floating tags and watchtower applies their updates, so they are not pinned to digests: a pin would freeze them. watchtower itself is the exception, so it never updates itself unreviewed.",
+      "matchPackageNames": ["nickfedor/watchtower"],
+      "pinDigests": true
+    },
     {
       "description": "Group the images this stack builds and publishes itself.",
       "matchPackageNames": [

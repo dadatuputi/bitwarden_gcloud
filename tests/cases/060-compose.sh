@@ -53,6 +53,13 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
 	assert_contains "$(cat "$WORK/compose-tunnel.yaml")" "pull_policy: daily" "the tunnel path re-checks for a newer cloudflared each day"
 	assert_contains "$(cat "$WORK/compose-tunnel.yaml")" "IP_HEADER: CF-Connecting-IP" "the tunnel path tells vaultwarden which header carries the client IP"
 
+	# watchtower is how security updates reach an unattended deployment, so it
+	# runs by default, and WATCHTOWER_MONITOR_ONLY reaches it to turn that off.
+	svcs=$(compose -f "$ROOT/docker-compose.yml" config --services 2>/dev/null | sort | tr '\n' ' ')
+	assert_contains "$svcs" "watchtower " "watchtower runs by default"
+	wt=$(WATCHTOWER_MONITOR_ONLY=true compose -f "$ROOT/docker-compose.yml" config watchtower 2>/dev/null)
+	assert_contains "$wt" 'WATCHTOWER_MONITOR_ONLY: "true"' "WATCHTOWER_MONITOR_ONLY reaches watchtower"
+
 	# The end-to-end overlay: bitwarden and backup only, nothing that needs a
 	# hostname, and no cloudflared either.
 	svcs=$(compose -f "$ROOT/docker-compose.yml" -f "$ROOT/tests/e2e/docker-compose.e2e.yml" config --services 2>/dev/null | sort | tr '\n' ' ')

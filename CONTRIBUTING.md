@@ -44,9 +44,9 @@ a tag. The number says what updating costs an existing deployment:
 - **Patch**: fixes only, and updating needs no action.
 
 A tag fixes the configuration and scripts in this repository, not the
-container images. The stack runs floating image tags (`:latest`, `:master`),
-which change whenever the host pulls them: by Watchtower, if its opt-in
-profile is enabled, or by `docker-compose pull`.
+container images. The stack follows floating image tags (`:latest`,
+`:master`), and Watchtower, which runs by default, applies their security
+rebuilds on its weekly schedule, between releases as well as with them.
 
 ## Cutting a release
 
