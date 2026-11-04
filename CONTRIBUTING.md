@@ -66,7 +66,8 @@ These are set once, in the repository's settings on GitHub:
   request title and description".** This carries each description's trailers
   into its merge commit on `master`, where the release-notes script reads
   them. Without it, the merge commit holds only the title and the notes come
-  out empty.
+  out empty. To check it after a merge, `git log -1 --format=%B origin/master`
+  should end with the pull request's trailers.
 - **Rules → require the "Release-note trailers" status check** on
   pull requests to `master`, if the check should block merging rather than
   only warn.
