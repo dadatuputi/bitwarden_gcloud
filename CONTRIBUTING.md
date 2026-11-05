@@ -44,9 +44,12 @@ a tag. The number says what updating costs an existing deployment:
 - **Patch**: fixes only, and updating needs no action.
 
 A tag fixes the configuration and scripts in this repository, not the
-container images. The stack follows floating image tags (`:latest`,
-`:master`), and Watchtower, which runs by default, applies their security
-rebuilds on its weekly schedule, between releases as well as with them.
+container images. The stack follows floating image tags (`:1` for the bwgc
+images, `:latest-alpine` for Vaultwarden), and Watchtower, which runs by
+default, applies their security rebuilds on its weekly schedule, between
+releases as well as with them. The bwgc images follow their major version, so
+a breaking image change ships as `:2` and reaches deployments only through a
+release here that moves the compose file to it.
 
 ## Cutting a release
 
