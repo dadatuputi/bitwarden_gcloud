@@ -35,9 +35,10 @@ jobs:
           ## About the container images
 
           A release fixes this repository's configuration and scripts, not the
-          container images. The stack follows floating image tags (`:latest`,
-          `:master`), and Watchtower applies their security rebuilds on its
-          weekly schedule, between releases as well as with them.
+          container images. The stack follows floating image tags (`:1` for
+          the bwgc images, `:latest-alpine` for Vaultwarden), and Watchtower
+          applies their security rebuilds on its weekly schedule, between
+          releases as well as with them.
           NOTE
           cat notes.md
 

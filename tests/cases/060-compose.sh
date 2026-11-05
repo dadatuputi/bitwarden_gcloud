@@ -67,3 +67,14 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
 else
 	printf '  skip docker compose config (docker compose not installed)\n'
 fi
+
+# The bwgc images follow their major version tag, which moves only to a
+# compatible release or a security rebuild of one. :master would also carry
+# unreleased and breaking changes to every deployment.
+for img in bwgc_backup bwgc_caddy bwgc_countryblock; do
+	ref=$(grep -oE "ghcr.io/dadatuputi/$img:[A-Za-z0-9._-]+" "$ROOT/docker-compose.yml" | head -1)
+	case "${ref##*:}" in
+		[0-9]|[0-9][0-9]) assert_eq ok ok "$img follows a major version tag (${ref##*:})" ;;
+		*) assert_eq "${ref##*:}" "a major version" "$img follows a major version tag" ;;
+	esac
+done
