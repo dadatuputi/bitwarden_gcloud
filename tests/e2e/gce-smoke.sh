@@ -520,7 +520,9 @@ if tier2; then
 	PROBE=$(probe_host "$ID")
 	cf_delete_probe "$ID"
 	if [ -z "$(cf_probe_records "$ID")" ]; then
-		on "$NEW_INSTANCE" "docker exec -i ddns sh -c 'umask 077; cat > /tmp/ddprobe.conf'" <<EOF
+		# Written on the host and copied in: a heredoc through docker exec -i
+		# over ssh hung a run until the job timed out. Every call is bounded.
+		on "$NEW_INSTANCE" "umask 077; cat > /tmp/ddprobe.conf" <<EOF
 use=cmd, cmd='echo 192.0.2.10'
 protocol=cloudflare
 zone=${CF_TEST_HOSTNAME#*.}
@@ -529,8 +531,10 @@ login=token
 password=$CF_DNS_TOKEN
 $PROBE
 EOF
-		probelog=$(on_q "$NEW_INSTANCE" 'docker exec ddns sh -c "ddclient -daemon=0 -foreground -verbose -noquiet -file /tmp/ddprobe.conf -cache /tmp/ddprobe.cache 2>&1; rm -f /tmp/ddprobe.conf /tmp/ddprobe.cache"')
-		ddver=$(on_q "$NEW_INSTANCE" 'docker exec ddns ddclient -version 2>&1 | head -1')
+		probelog=$(on_q "$NEW_INSTANCE" 'timeout 30 docker cp /tmp/ddprobe.conf ddns:/tmp/ddprobe.conf; rm -f /tmp/ddprobe.conf; \
+  timeout 120 docker exec ddns ddclient -daemon=0 -foreground -verbose -noquiet -file /tmp/ddprobe.conf -cache /tmp/ddprobe.cache </dev/null 2>&1; \
+  echo "ddclient exit $?"; timeout 30 docker exec ddns rm -f /tmp/ddprobe.conf /tmp/ddprobe.cache' </dev/null)
+		ddver=$(on_q "$NEW_INSTANCE" 'timeout 30 docker exec ddns sh -c "ddclient --version 2>&1 || ddclient -version 2>&1" </dev/null | head -1' </dev/null)
 		after=$(cf_probe_records "$ID" | jq -r '"\(.type) \(.content)"' | head -1)
 		echo "  ddclient probe ($ddver) on $PROBE, which had no record:"
 		printf '%s\n' "$probelog" | grep -v -i 'password\|token' | tail -25 | sed 's/^/       | /'
