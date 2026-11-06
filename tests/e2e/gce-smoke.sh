@@ -393,6 +393,8 @@ expect "$out" "$ID" "the replacement carries the label"
 want=$(printf '%s' "$TARGET_FAMILY" | sed 's/^cos-//; s/-lts$//')
 out=$(on_q "$NEW_INSTANCE" 'grep ^VERSION= /etc/os-release | cut -d= -f2')
 expect "$out" "$want" "the replacement runs milestone $want"
+out=$(gcloud compute instances describe "$NEW_INSTANCE" --zone "$ZONE" --format='value(metadata.items.cos-update-strategy)' 2>/dev/null)
+expect "$out" update_enabled "the replacement has OS updates enabled"
 wait_for "the vault" 30 vault_alive "$NEW_INSTANCE" || exit 1
 verify_on_disk "$NEW_INSTANCE" "after upgrade"
 
