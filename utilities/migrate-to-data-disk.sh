@@ -606,7 +606,8 @@ else
 	sed 's/^/  /' "$CC"
 fi
 gcloud compute instances add-metadata "$INSTANCE" --zone "$ZONE" \
-	--metadata-from-file user-data="$CC"
+	--metadata-from-file user-data="$CC" \
+	--metadata cos-update-strategy=update_enabled
 echo "cloud-config applied. /etc is tmpfs on COS, so this is what reapplies it every boot."
 gcloud compute instances remove-metadata "$INSTANCE" --zone "$ZONE" --keys startup-script >/dev/null 2>&1 \
 	&& echo "removed the legacy startup-script reboot watcher, now handled by the timer" || true
