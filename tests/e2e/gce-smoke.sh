@@ -403,7 +403,9 @@ verify_on_disk "$NEW_INSTANCE" "after upgrade"
 # opening and closing the ports. With Cloudflare, each end is also fetched
 # from outside.
 DEPLOY=$MOUNT/bitwarden_gcloud
-containers() { on_q "$1" "docker ps --format '{{.Names}}' | sort | tr '\n' ' '"; }
+# The stack's own containers only: a one-off helper started with docker run
+# (no compose label) is not part of the set the switches are judged on.
+containers() { on_q "$1" "docker ps --filter label=com.docker.compose.project --format '{{.Names}}' | sort | tr '\n' ' '"; }
 seeded_ok() { [ "$(on_q "$1" 'docker exec backup sqlite3 /data/db.sqlite3 "select email from users"')" = "$SEED_EMAIL" ]; }
 external_ip() { gcloud compute instances describe "$1" --zone "$ZONE" --format='value(networkInterfaces[0].accessConfigs[0].natIP)'; }
 # curl writes the -w code even when it fails (000 on a timeout), and its
@@ -457,11 +459,11 @@ close_ports() { gcloud compute instances remove-tags "$1" --zone "$ZONE" --tags 
 say "Step 6: switch to the Cloudflare tunnel"
 if tier2; then TUNNEL_TOKEN=$CF_TUNNEL_TOKEN; else TUNNEL_TOKEN="e2e-no-such-tunnel-$ID"; fi
 must "the stack is switched to the tunnel file set" switch_to_tunnel "$NEW_INSTANCE" "$TUNNEL_TOKEN"
-expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared " "tunnel: bitwarden, backup and cloudflared run, nothing else"
+expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared watchtower " "tunnel: bitwarden, backup, cloudflared and watchtower run, nothing else"
 if seeded_ok "$NEW_INSTANCE"; then seeded=yes; else seeded=no; fi
 expect "$seeded" yes "tunnel: the vault still holds the seeded account"
 on "$NEW_INSTANCE" 'sudo systemctl start bwgc-supervise.service' >/dev/null 2>&1
-expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared " "tunnel: a supervisor run leaves the container set alone"
+expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared watchtower " "tunnel: a supervisor run leaves the container set alone"
 if tier2; then
 	if wait_for "the vault through Cloudflare" 18 via_cloudflare; then cf_ok=yes; else cf_ok=no; fi
 	expect "$cf_ok" yes "tunnel: the vault answers through Cloudflare at $CF_TEST_HOSTNAME"
@@ -486,7 +488,7 @@ fi
 must "the stack is switched back to the Caddy file set" switch_to_caddy "$NEW_INSTANCE"
 must "ports 80 and 443 are opened with the http-server/https-server tags" open_ports "$NEW_INSTANCE"
 IP=$(external_ip "$NEW_INSTANCE")
-expect "$(containers "$NEW_INSTANCE")" "backup bitwarden countryblock ddns fail2ban proxy " "caddy: the six containers run and cloudflared is gone"
+expect "$(containers "$NEW_INSTANCE")" "backup bitwarden countryblock ddns fail2ban proxy watchtower " "caddy: the seven containers run and cloudflared is gone"
 if seeded_ok "$NEW_INSTANCE"; then seeded=yes; else seeded=no; fi
 expect "$seeded" yes "caddy: the vault still holds the seeded account"
 # Caddy answers on the instance itself first (internal certificate, or the
@@ -550,7 +552,7 @@ fi
 say "Step 8: back to the tunnel, ports closed"
 must "the stack is switched to the tunnel file set again" switch_to_tunnel "$NEW_INSTANCE" "$TUNNEL_TOKEN"
 close_ports "$NEW_INSTANCE"
-expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared " "tunnel again: bitwarden, backup and cloudflared run, nothing else"
+expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared watchtower " "tunnel again: bitwarden, backup, cloudflared and watchtower run, nothing else"
 sleep "$((SLEEP * 2))"
 expect "$(http_code --resolve "$DOMAIN:443:$IP" "https://$DOMAIN/alive")" 000 "tunnel again: nothing answers from outside on 443"
 expect "$(http_code "http://$IP/")" 000 "tunnel again: nothing answers from outside on 80"

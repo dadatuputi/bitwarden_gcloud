@@ -33,8 +33,8 @@ by the daemon. That is what the migration is for.
 7. Switches the replacement to the Cloudflare tunnel path, back to Caddy, and
    to the tunnel again, with the commands the wiki gives for each direction
    ([Switching to a Cloudflare Tunnel](https://github.com/dadatuputi/bitwarden_gcloud/wiki/Switching-to-a-Cloudflare-Tunnel)
-   and its "Going back to Caddy"). Each end checks the container set (three
-   on the tunnel, six on Caddy, no orphan from the other), that the seeded
+   and its "Going back to Caddy"). Each end checks the container set (four
+   on the tunnel, seven on Caddy, watchtower on both, no orphan from the other), that the seeded
    account is still there, that a supervisor run does not undo the switch,
    and that the `http-server`/`https-server` tags open and close ports 80
    and 443 from outside. On the Caddy path it also fetches the vault over
