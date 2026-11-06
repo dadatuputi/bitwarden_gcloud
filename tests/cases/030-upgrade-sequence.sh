@@ -39,6 +39,20 @@ assert_before "$CALLS" "detach-disk" "instances delete vault-old" \
 assert_contains "$CALLS" "name=bwgc-data,device-name=bwgc-data" \
 	"replacement is created with the data disk already attached"
 
+# The replacement can give the owner a different uid than the data disk carries.
+assert_before "$CALLS" "stat -c %U /mnt/disks/bwgc/bitwarden_gcloud" "instances delete vault-old" \
+	"the deployment's owner is read before the old instance is deleted"
+assert_contains "$CALLS" "id -u tester" "the owner's uid is looked up on the replacement"
+assert_before "$CALLS" "-uid \$OU -exec chown -h \$NU" "install-alias.sh" \
+	"the owner's files are re-owned before the shell setup needs them"
+
+MOCK_DEPLOY_OWNER='x;rm -rf /'
+export MOCK_DEPLOY_OWNER
+run_upgrade
+unset MOCK_DEPLOY_OWNER
+assert_status "$UPGRADE_STATUS" 0 "an owner name that is not a plain login does not stop the upgrade"
+assert_not_contains "$CALLS" "id -u x;" "and is never put into a remote command"
+
 # --- --overlap: the reverse order -----------------------------------------
 run_upgrade --overlap
 assert_status "$UPGRADE_STATUS" 0 "--overlap run succeeds"
