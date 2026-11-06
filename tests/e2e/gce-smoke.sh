@@ -127,9 +127,16 @@ cf_restore_original() {
 		| jq -e '.success' >/dev/null && rm -f "$DNS_SAVE"
 }
 
+# A throwaway name beside the test hostname, with no record of its own, for
+# finding out whether ddclient creates a missing record or only updates one.
+probe_host() { printf 'ddprobe-%s.%s' "$1" "${CF_TEST_HOSTNAME#*.}"; }
+cf_probe_records() { cf "$CF_API/zones/$CF_ZONE_ID/dns_records?name=$(probe_host "$1")" | jq -c '.result[]'; }
+cf_delete_probe() { cf_probe_records "$1" | jq -r '.id' | while IFS= read -r rid; do cf -X DELETE "$CF_API/zones/$CF_ZONE_ID/dns_records/$rid" >/dev/null; done; }
+
 cleanup_id() {
 	say "Cleaning up bwgc-e2e=$1"
 	if tier2; then cf_restore_original || echo "could not restore $CF_TEST_HOSTNAME; check the zone" >&2; fi
+	if tier2; then cf_delete_probe "$1" || echo "could not delete $(probe_host "$1"); check the zone" >&2; fi
 	for inst in $(gcloud compute instances list --filter="$(label_filter "$1")" --format='value(name)' 2>/dev/null); do
 		echo "deleting instance $inst"
 		gcloud compute instances delete "$inst" --zone "$ZONE" --quiet >/dev/null 2>&1 || echo "  (already gone)"
@@ -503,6 +510,41 @@ if tier2; then
 	ddlog=$(on_q "$NEW_INSTANCE" 'docker logs ddns 2>&1 | tail -20')
 	case "$ddlog" in *SUCCESS*|*skipped*|*"IP address"*) dd=ok ;; *) dd=none ;; esac
 	expect "$dd" ok "caddy: ddclient reached Cloudflare with the token"
+
+	# Does ddclient's Cloudflare driver create a record that does not exist,
+	# or only update one? The wiki has readers make the record by hand
+	# because nobody knew. Reported, not judged: either answer is a finding.
+	# A documentation address (RFC 5737), so the name never reaches a host.
+	PROBE=$(probe_host "$ID")
+	cf_delete_probe "$ID"
+	if [ -z "$(cf_probe_records "$ID")" ]; then
+		on "$NEW_INSTANCE" "docker exec -i ddns sh -c 'umask 077; cat > /tmp/ddprobe.conf'" <<EOF
+use=cmd, cmd='echo 192.0.2.10'
+protocol=cloudflare
+zone=${CF_TEST_HOSTNAME#*.}
+ttl=1
+login=token
+password=$CF_DNS_TOKEN
+$PROBE
+EOF
+		probelog=$(on_q "$NEW_INSTANCE" 'docker exec ddns sh -c "ddclient -daemon=0 -foreground -verbose -noquiet -file /tmp/ddprobe.conf -cache /tmp/ddprobe.cache 2>&1; rm -f /tmp/ddprobe.conf /tmp/ddprobe.cache"')
+		ddver=$(on_q "$NEW_INSTANCE" 'docker exec ddns ddclient -version 2>&1 | head -1')
+		after=$(cf_probe_records "$ID" | jq -r '"\(.type) \(.content)"' | head -1)
+		echo "  ddclient probe ($ddver) on $PROBE, which had no record:"
+		printf '%s\n' "$probelog" | grep -v -i 'password\|token' | tail -25 | sed 's/^/       | /'
+		if [ "$after" = "A 192.0.2.10" ]; then
+			echo "  INFO ddclient CREATED the missing A record ($after)"
+		elif [ -n "$after" ]; then
+			echo "  INFO ddclient left a record, but not the expected one: $after"
+		else
+			echo "  INFO ddclient did NOT create the missing record"
+		fi
+		cf_delete_probe "$ID"
+		[ -z "$(cf_probe_records "$ID")" ] && gone=yes || gone=no
+		expect "$gone" yes "caddy: the ddclient probe record $PROBE is removed again"
+	else
+		fail "caddy: $PROBE could not be cleared before the ddclient probe"
+	fi
 fi
 
 say "Step 8: back to the tunnel, ports closed"
