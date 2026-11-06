@@ -127,9 +127,16 @@ cf_restore_original() {
 		| jq -e '.success' >/dev/null && rm -f "$DNS_SAVE"
 }
 
+# A throwaway name beside the test hostname, with no record of its own, for
+# finding out whether ddclient creates a missing record or only updates one.
+probe_host() { printf 'ddprobe-%s.%s' "$1" "${CF_TEST_HOSTNAME#*.}"; }
+cf_probe_records() { cf "$CF_API/zones/$CF_ZONE_ID/dns_records?name=$(probe_host "$1")" | jq -c '.result[]'; }
+cf_delete_probe() { cf_probe_records "$1" | jq -r '.id' | while IFS= read -r rid; do cf -X DELETE "$CF_API/zones/$CF_ZONE_ID/dns_records/$rid" >/dev/null; done; }
+
 cleanup_id() {
 	say "Cleaning up bwgc-e2e=$1"
 	if tier2; then cf_restore_original || echo "could not restore $CF_TEST_HOSTNAME; check the zone" >&2; fi
+	if tier2; then cf_delete_probe "$1" || echo "could not delete $(probe_host "$1"); check the zone" >&2; fi
 	for inst in $(gcloud compute instances list --filter="$(label_filter "$1")" --format='value(name)' 2>/dev/null); do
 		echo "deleting instance $inst"
 		gcloud compute instances delete "$inst" --zone "$ZONE" --quiet >/dev/null 2>&1 || echo "  (already gone)"
@@ -396,7 +403,9 @@ verify_on_disk "$NEW_INSTANCE" "after upgrade"
 # opening and closing the ports. With Cloudflare, each end is also fetched
 # from outside.
 DEPLOY=$MOUNT/bitwarden_gcloud
-containers() { on_q "$1" "docker ps --format '{{.Names}}' | sort | tr '\n' ' '"; }
+# The stack's own containers only: a one-off helper started with docker run
+# (no compose label) is not part of the set the switches are judged on.
+containers() { on_q "$1" "docker ps --filter label=com.docker.compose.project --format '{{.Names}}' | sort | tr '\n' ' '"; }
 seeded_ok() { [ "$(on_q "$1" 'docker exec backup sqlite3 /data/db.sqlite3 "select email from users"')" = "$SEED_EMAIL" ]; }
 external_ip() { gcloud compute instances describe "$1" --zone "$ZONE" --format='value(networkInterfaces[0].accessConfigs[0].natIP)'; }
 # curl writes the -w code even when it fails (000 on a timeout), and its
@@ -448,13 +457,23 @@ open_ports() { # open_ports <instance>
 close_ports() { gcloud compute instances remove-tags "$1" --zone "$ZONE" --tags http-server,https-server >/dev/null; }
 
 say "Step 6: switch to the Cloudflare tunnel"
-if tier2; then TUNNEL_TOKEN=$CF_TUNNEL_TOKEN; else TUNNEL_TOKEN="e2e-no-such-tunnel-$ID"; fi
+# Without the Cloudflare tier, a made-up token in the real format: base64 of
+# {"a": account tag, "t": tunnel id, "s": base64 secret}. cloudflared rejects
+# a token it cannot decode and exits ("Provided Tunnel token is not valid"),
+# which would leave no container to check; one it can decode it tries, fails
+# to authenticate, and keeps retrying, as with a tunnel that was deleted.
+fake_tunnel_token() {
+	printf '{"a":"e2e00000000000000000000000000000","t":"00000000-0000-4000-8000-%s","s":"%s"}' \
+		"$(printf '%s000000000000' "$(printf '%s' "$ID" | tr -cd '0-9a-f')" | cut -c1-12)" \
+		"$(printf 'e2e-no-such-tunnel-secret-%s' "$ID" | base64 | tr -d '\n')" | base64 | tr -d '\n'
+}
+if tier2; then TUNNEL_TOKEN=$CF_TUNNEL_TOKEN; else TUNNEL_TOKEN=$(fake_tunnel_token); fi
 must "the stack is switched to the tunnel file set" switch_to_tunnel "$NEW_INSTANCE" "$TUNNEL_TOKEN"
-expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared " "tunnel: bitwarden, backup and cloudflared run, nothing else"
+expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared watchtower " "tunnel: bitwarden, backup, cloudflared and watchtower run, nothing else"
 if seeded_ok "$NEW_INSTANCE"; then seeded=yes; else seeded=no; fi
 expect "$seeded" yes "tunnel: the vault still holds the seeded account"
 on "$NEW_INSTANCE" 'sudo systemctl start bwgc-supervise.service' >/dev/null 2>&1
-expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared " "tunnel: a supervisor run leaves the container set alone"
+expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared watchtower " "tunnel: a supervisor run leaves the container set alone"
 if tier2; then
 	if wait_for "the vault through Cloudflare" 18 via_cloudflare; then cf_ok=yes; else cf_ok=no; fi
 	expect "$cf_ok" yes "tunnel: the vault answers through Cloudflare at $CF_TEST_HOSTNAME"
@@ -479,7 +498,7 @@ fi
 must "the stack is switched back to the Caddy file set" switch_to_caddy "$NEW_INSTANCE"
 must "ports 80 and 443 are opened with the http-server/https-server tags" open_ports "$NEW_INSTANCE"
 IP=$(external_ip "$NEW_INSTANCE")
-expect "$(containers "$NEW_INSTANCE")" "backup bitwarden countryblock ddns fail2ban proxy " "caddy: the six containers run and cloudflared is gone"
+expect "$(containers "$NEW_INSTANCE")" "backup bitwarden countryblock ddns fail2ban proxy watchtower " "caddy: the seven containers run and cloudflared is gone"
 if seeded_ok "$NEW_INSTANCE"; then seeded=yes; else seeded=no; fi
 expect "$seeded" yes "caddy: the vault still holds the seeded account"
 # Caddy answers on the instance itself first (internal certificate, or the
@@ -503,12 +522,51 @@ if tier2; then
 	ddlog=$(on_q "$NEW_INSTANCE" 'docker logs ddns 2>&1 | tail -20')
 	case "$ddlog" in *SUCCESS*|*skipped*|*"IP address"*) dd=ok ;; *) dd=none ;; esac
 	expect "$dd" ok "caddy: ddclient reached Cloudflare with the token"
+
+	# Does ddclient's Cloudflare driver create a record that does not exist,
+	# or only update one? The wiki has readers make the record by hand
+	# because nobody knew. Reported, not judged: either answer is a finding.
+	# A documentation address (RFC 5737), so the name never reaches a host.
+	PROBE=$(probe_host "$ID")
+	cf_delete_probe "$ID"
+	if [ -z "$(cf_probe_records "$ID")" ]; then
+		# Written on the host and copied in: a heredoc through docker exec -i
+		# over ssh hung a run until the job timed out. Every call is bounded.
+		on "$NEW_INSTANCE" "umask 077; cat > /tmp/ddprobe.conf" <<EOF
+use=cmd, cmd='echo 192.0.2.10'
+protocol=cloudflare
+zone=${CF_TEST_HOSTNAME#*.}
+ttl=1
+login=token
+password=$CF_DNS_TOKEN
+$PROBE
+EOF
+		probelog=$(on_q "$NEW_INSTANCE" 'timeout 30 docker cp /tmp/ddprobe.conf ddns:/tmp/ddprobe.conf; rm -f /tmp/ddprobe.conf; \
+  timeout 120 docker exec ddns ddclient -daemon=0 -foreground -verbose -noquiet -file /tmp/ddprobe.conf -cache /tmp/ddprobe.cache </dev/null 2>&1; \
+  echo "ddclient exit $?"; timeout 30 docker exec ddns rm -f /tmp/ddprobe.conf /tmp/ddprobe.cache' </dev/null)
+		ddver=$(on_q "$NEW_INSTANCE" 'timeout 30 docker exec ddns sh -c "ddclient --version 2>&1 || ddclient -version 2>&1" </dev/null | head -1' </dev/null)
+		after=$(cf_probe_records "$ID" | jq -r '"\(.type) \(.content)"' | head -1)
+		echo "  ddclient probe ($ddver) on $PROBE, which had no record:"
+		printf '%s\n' "$probelog" | grep -v -i 'password\|token' | tail -25 | sed 's/^/       | /'
+		if [ "$after" = "A 192.0.2.10" ]; then
+			echo "  INFO ddclient CREATED the missing A record ($after)"
+		elif [ -n "$after" ]; then
+			echo "  INFO ddclient left a record, but not the expected one: $after"
+		else
+			echo "  INFO ddclient did NOT create the missing record"
+		fi
+		cf_delete_probe "$ID"
+		[ -z "$(cf_probe_records "$ID")" ] && gone=yes || gone=no
+		expect "$gone" yes "caddy: the ddclient probe record $PROBE is removed again"
+	else
+		fail "caddy: $PROBE could not be cleared before the ddclient probe"
+	fi
 fi
 
 say "Step 8: back to the tunnel, ports closed"
 must "the stack is switched to the tunnel file set again" switch_to_tunnel "$NEW_INSTANCE" "$TUNNEL_TOKEN"
 close_ports "$NEW_INSTANCE"
-expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared " "tunnel again: bitwarden, backup and cloudflared run, nothing else"
+expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared watchtower " "tunnel again: bitwarden, backup, cloudflared and watchtower run, nothing else"
 sleep "$((SLEEP * 2))"
 expect "$(http_code --resolve "$DOMAIN:443:$IP" "https://$DOMAIN/alive")" 000 "tunnel again: nothing answers from outside on 443"
 expect "$(http_code "http://$IP/")" 000 "tunnel again: nothing answers from outside on 80"

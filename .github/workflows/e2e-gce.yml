@@ -29,6 +29,10 @@ on:
         description: Leave the instances up for inspection (delete them by hand!)
         type: boolean
         default: false
+      basic_tier:
+        description: Ignore the Cloudflare secrets and run the basic tier only
+        type: boolean
+        default: false
   schedule:
     - cron: '0 5 1 * *'
 
@@ -46,10 +50,11 @@ env:
   # Optional: a tunnel's run token, a DNS-edit token scoped to one zone, that
   # zone's id and the hostname the test may rewrite. Empty when unset, and
   # the script then skips the checks through Cloudflare.
-  CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
-  CF_DNS_TOKEN: ${{ secrets.CF_DNS_TOKEN }}
-  CF_ZONE_ID: ${{ vars.CF_ZONE_ID }}
-  CF_TEST_HOSTNAME: ${{ vars.CF_TEST_HOSTNAME }}
+  # basic_tier blanks them, so the tier forks and local runs get is tested too.
+  CF_TUNNEL_TOKEN: ${{ inputs.basic_tier != true && secrets.CF_TUNNEL_TOKEN || '' }}
+  CF_DNS_TOKEN: ${{ inputs.basic_tier != true && secrets.CF_DNS_TOKEN || '' }}
+  CF_ZONE_ID: ${{ inputs.basic_tier != true && vars.CF_ZONE_ID || '' }}
+  CF_TEST_HOSTNAME: ${{ inputs.basic_tier != true && vars.CF_TEST_HOSTNAME || '' }}
 
 jobs:
   e2e:
