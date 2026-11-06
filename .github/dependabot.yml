@@ -1,4 +1,4 @@
-# Bump PRs for the pinned watchtower; the other images follow floating tags.
+# Major-version bump PRs for watchtower; the other images follow floating tags.
 version: 2
 updates:
   - package-ecosystem: docker-compose

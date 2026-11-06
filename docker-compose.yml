@@ -225,10 +225,9 @@ services:
     # WATCHTOWER_MONITOR_ONLY=true in .env to keep it checking without
     # updating anything, and update by hand instead.
     #
-    # Pinned rather than floating. This container decides when everything else
-    # updates, so it should not silently update itself. Dependabot raises a PR
-    # when a new release appears (.github/dependabot.yml).
-    image: nickfedor/watchtower:1.21.2
+    # Follows the major tag so watchtower updates itself, but not across a
+    # major release. Dependabot raises a PR for the next major.
+    image: nickfedor/watchtower:1
     restart: ${BWGC_RESTART_POLICY:-always}
     container_name: watchtower
     mem_limit: 96m
