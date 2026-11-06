@@ -457,7 +457,17 @@ open_ports() { # open_ports <instance>
 close_ports() { gcloud compute instances remove-tags "$1" --zone "$ZONE" --tags http-server,https-server >/dev/null; }
 
 say "Step 6: switch to the Cloudflare tunnel"
-if tier2; then TUNNEL_TOKEN=$CF_TUNNEL_TOKEN; else TUNNEL_TOKEN="e2e-no-such-tunnel-$ID"; fi
+# Without the Cloudflare tier, a made-up token in the real format: base64 of
+# {"a": account tag, "t": tunnel id, "s": base64 secret}. cloudflared rejects
+# a token it cannot decode and exits ("Provided Tunnel token is not valid"),
+# which would leave no container to check; one it can decode it tries, fails
+# to authenticate, and keeps retrying, as with a tunnel that was deleted.
+fake_tunnel_token() {
+	printf '{"a":"e2e00000000000000000000000000000","t":"00000000-0000-4000-8000-%s","s":"%s"}' \
+		"$(printf '%s000000000000' "$(printf '%s' "$ID" | tr -cd '0-9a-f')" | cut -c1-12)" \
+		"$(printf 'e2e-no-such-tunnel-secret-%s' "$ID" | base64 | tr -d '\n')" | base64 | tr -d '\n'
+}
+if tier2; then TUNNEL_TOKEN=$CF_TUNNEL_TOKEN; else TUNNEL_TOKEN=$(fake_tunnel_token); fi
 must "the stack is switched to the tunnel file set" switch_to_tunnel "$NEW_INSTANCE" "$TUNNEL_TOKEN"
 expect "$(containers "$NEW_INSTANCE")" "backup bitwarden cloudflared watchtower " "tunnel: bitwarden, backup, cloudflared and watchtower run, nothing else"
 if seeded_ok "$NEW_INSTANCE"; then seeded=yes; else seeded=no; fi
