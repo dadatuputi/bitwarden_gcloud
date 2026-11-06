@@ -331,6 +331,9 @@ on_vm "$INSTANCE" "set -e; cd $MOUNT/bitwarden_gcloud; \
     && echo 'BACKUP_VERIFIED' ;; \
   esac"
 
+DEPLOY_OWNER=$(on_vm "$INSTANCE" "stat -c %U $MOUNT/bitwarden_gcloud" 2>/dev/null | tr -d '\r')
+case "$DEPLOY_OWNER" in ''|UNKNOWN|*[!a-z0-9_.-]*) DEPLOY_OWNER= ;; esac
+
 # Keep a copy in this shell session. Not every deployment has rclone
 # configured, and this is usually run by hand, so a local copy is the one
 # rollback we can guarantee exists.
@@ -550,6 +553,21 @@ fi
 on_vm "$NEW_INSTANCE" 'sudo cloud-init status --wait >/dev/null 2>&1; :'
 
 say "Step 5/7: bring the vault up on the new milestone"
+if [ -n "$DEPLOY_OWNER" ]; then
+on_vm "$NEW_INSTANCE" "D=$MOUNT/bitwarden_gcloud; OU=\$(stat -c %u \$D); OG=\$(stat -c %g \$D); \
+  if ! NU=\$(id -u $DEPLOY_OWNER 2>/dev/null) || ! NG=\$(id -g $DEPLOY_OWNER 2>/dev/null); then \
+    echo 'WARNING: $DEPLOY_OWNER owned the deployment but has no account on $NEW_INSTANCE.' >&2; \
+    echo \"ssh in once as $DEPLOY_OWNER, then: sudo find $MOUNT -xdev -uid \$OU -exec chown -h $DEPLOY_OWNER: {} +\" >&2; \
+    exit 0; \
+  fi; \
+  if [ \$OU -ge 1000 ] && [ \$OU != \$NU ]; then \
+    echo \"$DEPLOY_OWNER is uid \$NU here, was \$OU: re-owning its files on the data disk\"; \
+    sudo find $MOUNT -xdev -uid \$OU -exec chown -h \$NU {} +; \
+  fi; \
+  if [ \$OG -ge 1000 ] && [ \$OG != \$NG ]; then \
+    sudo find $MOUNT -xdev -gid \$OG -exec chgrp -h \$NG {} +; \
+  fi"
+fi
 on_vm "$NEW_INSTANCE" "set -e; \
   echo '--- milestone ---'; grep -E '^(VERSION|BUILD_ID)=' /etc/os-release; \
   echo '--- docker ---'; docker --version; \

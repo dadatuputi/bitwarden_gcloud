@@ -271,6 +271,8 @@ verify_on_disk() { # verify_on_disk <instance> <phase>
 	out=$(on_q "$inst" "sudo stat -c %a $MOUNT/bitwarden_gcloud")
 	case "$out" in *[1-7]) closed=no ;; *) closed=yes ;; esac
 	expect "$closed" yes "$phase: other users cannot enter the deployment ($out)"
+	out=$(on_q "$inst" "[ \$(stat -c %u $MOUNT/bitwarden_gcloud) = \$(id -u) ] && cd $MOUNT/bitwarden_gcloud && echo yes")
+	expect "$out" yes "$phase: the ssh user owns the deployment and can enter it"
 	out=$(on_q "$inst" "sudo stat -L -c %a $MOUNT/bitwarden_gcloud/.env")
 	expect "$out" 600 "$phase: .env is readable by its owner only"
 
