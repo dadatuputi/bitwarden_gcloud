@@ -173,6 +173,13 @@ $(make_private_body | sed 's/^/    /')
     #!/usr/bin/env sh
     # Reboot only when update-engine has staged an update that needs one.
     set -eu
+    # Milestone 117 and later only update when this metadata key says so.
+    MD=http://metadata.google.internal/computeMetadata/v1
+    POLICY="\$(curl -sf -H Metadata-Flavor:Google "\$MD/instance/attributes/cos-update-strategy" 2>/dev/null \\
+      || curl -sf -H Metadata-Flavor:Google "\$MD/project/attributes/cos-update-strategy" 2>/dev/null || true)"
+    if [ "\${POLICY:-}" != "update_enabled" ]; then
+      echo "cos-update-reboot: cos-update-strategy is '\${POLICY:-unset}', automatic OS updates are OFF on this milestone; set the metadata key to update_enabled" >&2
+    fi
     STATUS="\$(update_engine_client --status 2>/dev/null || true)"
     if [ -z "\$STATUS" ]; then
       echo "cos-update-reboot: could not query update_engine, doing nothing" >&2

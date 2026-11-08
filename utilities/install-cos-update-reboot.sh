@@ -38,7 +38,8 @@ cat <<EOF
 Write this cloud-config to your instance metadata:
 
     gcloud compute instances add-metadata INSTANCE --zone ZONE \\
-        --metadata-from-file user-data=$OUT
+        --metadata-from-file user-data=$OUT \\
+        --metadata cos-update-strategy=update_enabled
 
 Then reboot so cloud-init applies it:
 
