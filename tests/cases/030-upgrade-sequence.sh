@@ -38,6 +38,8 @@ assert_before "$CALLS" "detach-disk" "instances delete vault-old" \
 # The data disk must be present at first boot or cloud-init cannot mount it.
 assert_contains "$CALLS" "name=bwgc-data,device-name=bwgc-data" \
 	"replacement is created with the data disk already attached"
+assert_contains "$CALLS" "cos-update-strategy=update_enabled" \
+	"replacement is created with OS updates enabled"
 
 # The replacement can give the owner a different uid than the data disk carries.
 assert_before "$CALLS" "stat -c %U /mnt/disks/bwgc/bitwarden_gcloud" "instances delete vault-old" \

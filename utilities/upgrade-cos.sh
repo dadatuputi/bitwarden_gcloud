@@ -482,6 +482,7 @@ gcloud compute instances create "$NEW_INSTANCE" \
 	--boot-disk-device-name "${BOOT_DISK_NAME:-$NEW_INSTANCE}" \
 	--disk "name=$DISK_NAME,device-name=$DISK_NAME,mode=rw,boot=no" \
 	--metadata-from-file user-data="$CC" \
+	--metadata cos-update-strategy=update_enabled \
 	${OLD_TAGS:+--tags "$OLD_TAGS"} \
 	${OLD_SCOPES:+--scopes "$OLD_SCOPES"} \
 	${OLD_SA:+--service-account "$OLD_SA"} \
